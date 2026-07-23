@@ -37,10 +37,27 @@ export async function callGroqJSON(
 }
 
 // "2026-07-23" style date, plus day-of-week name, for grounding relative
-// dates ("Friday", "next week") in prompts sent to Groq.
+// dates ("Friday", "next week") in prompts sent to Groq. Also precomputes
+// tomorrow and the day after, since LLMs are unreliable at date arithmetic
+// on their own — better to hand them the answer than ask them to compute it.
 export function todayContext(): string {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
-  return `Today is ${weekday}, ${date}.`;
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const weekday = (d: Date) => d.toLocaleDateString("en-US", { weekday: "long" });
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const dayAfter = new Date(now);
+  dayAfter.setDate(now.getDate() + 2);
+
+  const weekdayDates: string[] = [];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    weekdayDates.push(`${weekday(d)} = ${fmt(d)}`);
+  }
+
+  return `Today is ${weekday(now)}, ${fmt(now)}.
+"tomorrow" = ${fmt(tomorrow)}. "day after tomorrow" = ${fmt(dayAfter)}.
+Upcoming weekday dates (use these exact values, do not compute your own): ${weekdayDates.join(", ")}.`;
 }

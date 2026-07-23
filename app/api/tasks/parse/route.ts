@@ -26,6 +26,10 @@ Rules:
   hobbies/rest/chores/social/self-care -> "personal".
 - Only populate the fields relevant to the chosen type; set the others to null.
 - If duration isn't stated, estimate a reasonable one for the task type.
+- Use the exact precomputed dates given above for "today", "tomorrow", and
+  weekday names — do not compute dates yourself, and do not default to
+  today's date unless the text explicitly says "today" or gives no deadline
+  at all.
 - Never include commentary outside the JSON object.`;
 
 export async function POST(request: NextRequest) {
