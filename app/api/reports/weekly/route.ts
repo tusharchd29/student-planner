@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
 import { callGroqJSON, todayContext } from "@/lib/groq";
+import { guard } from "@/lib/apiGuard";
 import {
   todayISOInAppTZ,
   addDaysISOInAppTZ,
@@ -28,14 +27,14 @@ Guidelines for the report text:
   for a notable streak is fine).`;
 
 export async function POST(request: NextRequest) {
-  const supabase = createRouteHandlerClient({ cookies });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  // Auth first, unconditionally. The rate limit is applied later — only
+  // when we're actually about to generate, so serving a cached report
+  // doesn't consume the allowance.
+  const auth = await guard();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const { supabase, user } = auth;
 
   const { force } = await request.json().catch(() => ({ force: false }));
 
@@ -55,6 +54,20 @@ export async function POST(request: NextRequest) {
         generatedAt: cached.created_at,
       });
     }
+  }
+
+  // Generating is the expensive path — limit it. Cached reads above are free.
+  const { data: allowed } = await supabase.rpc("planner_check_rate_limit", {
+    p_user_id: user.id,
+    p_bucket: "report",
+    p_limit: 10,
+    p_window: "1 day",
+  });
+  if (allowed === false) {
+    return NextResponse.json(
+      { error: "You've regenerated the report several times today. Try again tomorrow." },
+      { status: 429 }
+    );
   }
 
   const today = todayISOInAppTZ();

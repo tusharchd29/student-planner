@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGroqJSON, todayContext } from "@/lib/groq";
+import { guard } from "@/lib/apiGuard";
 
 const SYSTEM_PROMPT = `You extract a single student task from a short free-text
 description and return ONLY a JSON object (no markdown, no prose).
@@ -50,19 +51,38 @@ Rules:
   today's day of week.
 - Never include commentary outside the JSON object.`;
 
+// Task descriptions are a sentence or two. Anything longer is either a
+// mistake or someone trying to use our Groq key for their own prompts.
+const MAX_INPUT_CHARS = 500;
+
 export async function POST(request: NextRequest) {
-  const { text } = await request.json();
+  const auth = await guard({ bucket: "parse", limit: 60, window: "1 hour" });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const { text } = await request.json().catch(() => ({ text: null }));
 
   if (!text || typeof text !== "string" || !text.trim()) {
     return NextResponse.json({ error: "No text provided" }, { status: 400 });
+  }
+
+  if (text.length > MAX_INPUT_CHARS) {
+    return NextResponse.json(
+      { error: `Task description is too long (max ${MAX_INPUT_CHARS} characters).` },
+      { status: 400 }
+    );
   }
 
   try {
     const parsed = await callGroqJSON(SYSTEM_PROMPT, text);
     return NextResponse.json(parsed);
   } catch (err: any) {
+    console.error("Task parse failed:", err);
+    // Don't leak upstream error details (which can include request
+    // metadata) to the client.
     return NextResponse.json(
-      { error: err.message ?? "Failed to parse task" },
+      { error: "Couldn't parse that task. Please try rephrasing it." },
       { status: 502 }
     );
   }

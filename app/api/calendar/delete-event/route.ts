@@ -1,21 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { guard } from "@/lib/apiGuard";
 import { getGoogleClientForUser } from "@/lib/googleAuth";
 
 export async function POST(request: NextRequest) {
-  const { eventId } = await request.json();
-  if (!eventId) {
+  // Auth before touching the body — never do work for an unauthenticated caller.
+  const auth = await guard({ bucket: "delete_event", limit: 100, window: "1 hour" });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const { supabase, user } = auth;
+
+  const { eventId } = await request.json().catch(() => ({ eventId: null }));
+  if (!eventId || typeof eventId !== "string") {
     return NextResponse.json({ error: "No eventId provided" }, { status: 400 });
   }
 
-  const supabase = createRouteHandlerClient({ cookies });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  // Confirm this event id is actually one we synced for this user. RLS
+  // already scopes these reads to the caller, so a forged id simply won't
+  // match anything. Without this, the route would forward an arbitrary
+  // caller-supplied id straight to Google.
+  const ownershipChecks = await Promise.all([
+    supabase.from("planner_fixed_events").select("id").eq("google_event_id", eventId).limit(1),
+    supabase.from("planner_flex_tasks").select("id").eq("google_event_id", eventId).limit(1),
+    supabase.from("planner_personal_tasks").select("id").eq("google_event_id", eventId).limit(1),
+  ]);
+
+  const owned = ownershipChecks.some((r) => (r.data?.length ?? 0) > 0);
+  if (!owned) {
+    return NextResponse.json(
+      { error: "Event not found for this account" },
+      { status: 404 }
+    );
   }
 
   const { client: oauth2Client, error: authError } =

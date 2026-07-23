@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { guard } from "@/lib/apiGuard";
 import { scheduleDay, minutesToTime } from "@/lib/scheduler";
 import { getGoogleClientForUser } from "@/lib/googleAuth";
 import { TABLE_BY_TYPE } from "@/lib/tables";
@@ -9,15 +8,13 @@ import { todayISOInAppTZ, dayOfWeekInAppTZ, weekStartISOInAppTZ, APP_TIMEZONE } 
 import { computeReminders } from "@/lib/reminders";
 
 export async function POST() {
-  const supabase = createRouteHandlerClient({ cookies });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  // Google Calendar quota is shared across ALL users of this Cloud project,
+  // so one user spamming sync degrades everyone. Cap it per user.
+  const auth = await guard({ bucket: "sync", limit: 30, window: "1 hour" });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const { supabase, user } = auth;
 
   const { client: oauth2Client, error: authError } =
     await getGoogleClientForUser(supabase, user.id);

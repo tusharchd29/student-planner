@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
 import { callGroqJSON, todayContext } from "@/lib/groq";
-import { todayISOInAppTZ } from "@/lib/timezone";
+import { todayISOInAppTZ, addDaysISOInAppTZ } from "@/lib/timezone";
+import { guard } from "@/lib/apiGuard";
 
 const SYSTEM_PROMPT = `You are helping re-slot missed student tasks.
 
@@ -28,15 +27,14 @@ Rules:
 - Keep the summary under 20 words.`;
 
 export async function POST() {
-  const supabase = createRouteHandlerClient({ cookies });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  // Auth only here — the throttle check happens *after* we've confirmed
+  // there's actually work to do, so a user with no overdue tasks doesn't
+  // burn their once-a-day allowance on a no-op.
+  const auth = await guard();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const { supabase, user } = auth;
 
   const today = todayISOInAppTZ();
 
@@ -45,16 +43,34 @@ export async function POST() {
       .from("planner_flex_tasks")
       .select("id, title, deadline, duration_minutes")
       .eq("done", false)
-      .lt("deadline", today),
+      .lt("deadline", today)
+      .order("deadline", { ascending: true })
+      .limit(50),
     supabase
       .from("planner_flex_tasks")
       .select("id, title, deadline, duration_minutes")
       .eq("done", false)
-      .gte("deadline", today),
+      .gte("deadline", today)
+      .lte("deadline", addDaysISOInAppTZ(7))
+      .limit(50),
   ]);
 
   if (!missed || missed.length === 0) {
     return NextResponse.json({ reslotted: 0, summary: null });
+  }
+
+  // Only now that we know there IS work do we spend the daily allowance.
+  // This route previously fired a Groq call on *every* dashboard load for
+  // anyone with an overdue task — slow for the user, expensive for us.
+  const { data: allowed } = await supabase.rpc("planner_check_rate_limit", {
+    p_user_id: user.id,
+    p_bucket: "reslot",
+    p_limit: 1,
+    p_window: "1 day",
+  });
+
+  if (allowed === false) {
+    return NextResponse.json({ reslotted: 0, summary: null, throttled: true });
   }
 
   let plan: { reslots: { id: string; new_deadline: string }[]; summary: string };
@@ -64,8 +80,9 @@ export async function POST() {
       JSON.stringify({ missed, upcoming: upcoming ?? [] })
     );
   } catch (err: any) {
+    console.error("Re-slot failed:", err);
     return NextResponse.json(
-      { error: err.message ?? "Failed to re-slot tasks" },
+      { error: "Couldn't re-slot missed tasks right now." },
       { status: 502 }
     );
   }

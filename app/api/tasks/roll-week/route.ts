@@ -1,21 +1,17 @@
 import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
 import { weekStartISOInAppTZ } from "@/lib/timezone";
+import { guard } from "@/lib/apiGuard";
 
 // Detects personal tasks whose tracked week has ended, evaluates whether
 // the weekly quota was actually met, and updates their streak — then
 // resets them to a fresh (empty) week. Meant to be called once per
 // dashboard load; it's a no-op for tasks already on the current week.
 export async function POST() {
-  const supabase = createRouteHandlerClient({ cookies });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  const auth = await guard();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const { supabase } = auth;
 
   const currentWeekStart = weekStartISOInAppTZ();
 
