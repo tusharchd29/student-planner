@@ -6,11 +6,13 @@ import {
   scheduleDay,
   minutesToTime,
   timeToMinutes,
+  weekStartISO,
   FixedEvent,
   FlexTask,
   PersonalTask,
   ScheduledBlock,
 } from "@/lib/scheduler";
+import { TABLE_BY_TYPE, TaskKind } from "@/lib/tables";
 
 const typeStyles: Record<ScheduledBlock["type"], string> = {
   fixed: "bg-fixed/10 border-fixed text-fixed",
@@ -18,9 +20,27 @@ const typeStyles: Record<ScheduledBlock["type"], string> = {
   personal: "bg-personal/10 border-personal text-personal",
 };
 
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+type RawRow = { id: string; google_event_id: string | null; [k: string]: any };
+
+
 export default function DashboardPage() {
   const [blocks, setBlocks] = useState<ScheduledBlock[]>([]);
+  const [rawRows, setRawRows] = useState<{
+    fixed: RawRow[];
+    flex: RawRow[];
+    personal: RawRow[];
+  }>({ fixed: [], flex: [], personal: [] });
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<{
+    type: keyof typeof TABLE_BY_TYPE;
+    row: RawRow;
+  } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [reslotMessage, setReslotMessage] = useState<string | null>(null);
@@ -34,11 +54,31 @@ export default function DashboardPage() {
     const [{ data: fixedRows }, { data: flexRows }, { data: personalRows }] =
       await Promise.all([
         supabase.from("planner_fixed_events").select("*"),
-        supabase.from("planner_flex_tasks").select("*"),
-        supabase.from("planner_personal_tasks").select("*"),
+        supabase.from("planner_flex_tasks").select("*").eq("done", false),
+        supabase.from("planner_personal_tasks").select("*").eq("done", false),
       ]);
 
-    const fixed: FixedEvent[] = (fixedRows ?? []).map((r: any) => ({
+    setRawRows({
+      fixed: fixedRows ?? [],
+      flex: flexRows ?? [],
+      personal: personalRows ?? [],
+    });
+
+    const todayDow = new Date().getDay();
+    const today = todayISO();
+    const currentWeekStart = weekStartISO();
+
+    // Only fixed events actually happening today: a one-off event_date
+    // match, a recurring day_of_week match, or legacy rows with neither
+    // set (treated as every day).
+    const todaysFixed = (fixedRows ?? []).filter(
+      (r: any) =>
+        r.event_date === today ||
+        (r.event_date == null && r.day_of_week === todayDow) ||
+        (r.event_date == null && r.day_of_week == null)
+    );
+
+    const fixed: FixedEvent[] = todaysFixed.map((r: any) => ({
       id: r.id,
       title: r.title,
       start: minutesToTime(r.start_minutes),
@@ -53,7 +93,9 @@ export default function DashboardPage() {
     const personal: PersonalTask[] = (personalRows ?? []).map((r: any) => ({
       id: r.id,
       title: r.title,
-      weeklyQuotaMinutes: r.weekly_quota_minutes,
+      weeklyQuotaMinutes: r.weekly_quota_minutes ?? 0,
+      minutesUsedThisWeek:
+        r.week_start === currentWeekStart ? r.minutes_logged : 0,
     }));
 
     setBlocks(scheduleDay(fixed, flex, personal));
@@ -64,7 +106,9 @@ export default function DashboardPage() {
       const res = await fetch("/api/tasks/reslot-missed", { method: "POST" });
       const data = await res.json();
       if (res.ok && data.reslotted > 0) {
-        setReslotMessage(data.summary ?? `Re-slotted ${data.reslotted} missed task(s).`);
+        setReslotMessage(
+          data.summary ?? `Re-slotted ${data.reslotted} missed task(s).`
+        );
         load();
       }
     } catch {
@@ -90,11 +134,59 @@ export default function DashboardPage() {
               : ""
           }.`
         );
+        load();
       }
     } catch (e) {
       setSyncMessage("Network error while syncing.");
     }
     setSyncing(false);
+  }
+
+  function rawRowFor(block: ScheduledBlock): RawRow | undefined {
+    return rawRows[block.type].find((r) => r.id === block.sourceId);
+  }
+
+  async function markDone(block: ScheduledBlock) {
+    if (block.type === "fixed") return; // fixed events have no "done" concept
+    const table = TABLE_BY_TYPE[block.type];
+    await supabase.from(table).update({ done: true }).eq("id", block.sourceId);
+    load();
+  }
+
+  async function logPersonalTime(block: ScheduledBlock) {
+    const row = rawRowFor(block);
+    if (!row) return;
+    const currentWeekStart = weekStartISO();
+    const sameWeek = row.week_start === currentWeekStart;
+    const newLogged = (sameWeek ? row.minutes_logged : 0) + (row.duration_minutes ?? 30);
+    await supabase
+      .from("planner_personal_tasks")
+      .update({
+        week_start: currentWeekStart,
+        minutes_logged: Math.min(newLogged, row.weekly_quota_minutes ?? newLogged),
+      })
+      .eq("id", block.sourceId);
+    load();
+  }
+
+  async function deleteBlock(block: ScheduledBlock) {
+    const row = rawRowFor(block);
+    const table = TABLE_BY_TYPE[block.type];
+
+    if (row?.google_event_id) {
+      try {
+        await fetch("/api/calendar/delete-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId: row.google_event_id }),
+        });
+      } catch {
+        // Non-fatal — proceed with deleting the task row regardless.
+      }
+    }
+
+    await supabase.from(table).delete().eq("id", block.sourceId);
+    load();
   }
 
   return (
@@ -119,17 +211,64 @@ export default function DashboardPage() {
       )}
 
       <ol className="space-y-3">
-        {blocks.map((b) => (
-          <li
-            key={b.id}
-            className={`rounded-xl border-l-4 p-3 ${typeStyles[b.type]}`}
-          >
-            <div className="text-xs opacity-70">
-              {b.start} – {b.end}
-            </div>
-            <div className="font-medium text-slate-800">{b.title}</div>
-          </li>
-        ))}
+        {blocks.map((b) => {
+          const row = rawRowFor(b);
+          return (
+            <li
+              key={`${b.sourceId}-${b.start}`}
+              className={`rounded-xl border-l-4 p-3 ${typeStyles[b.type]}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs opacity-70">
+                    {b.start} – {b.end}
+                  </div>
+                  <div className="font-medium text-slate-800">{b.title}</div>
+                  {b.type === "personal" && row && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      {Math.min(
+                        row.week_start === weekStartISO()
+                          ? row.minutes_logged
+                          : 0,
+                        row.weekly_quota_minutes ?? 0
+                      )}
+                      /{row.weekly_quota_minutes ?? 0} min this week
+                    </div>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {b.type !== "fixed" && (
+                    <button
+                      onClick={() =>
+                        b.type === "personal"
+                          ? logPersonalTime(b)
+                          : markDone(b)
+                      }
+                      title={b.type === "personal" ? "Log time" : "Mark done"}
+                      className="rounded-full border px-2 py-1 text-xs text-slate-600 hover:bg-white"
+                    >
+                      {b.type === "personal" ? "Log" : "Done"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => row && setEditing({ type: b.type, row })}
+                    title="Edit"
+                    className="rounded-full border px-2 py-1 text-xs text-slate-600 hover:bg-white"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteBlock(b)}
+                    title="Delete"
+                    className="rounded-full border px-2 py-1 text-xs text-red-500 hover:bg-white"
+                  >
+                    Del
+                  </button>
+                </div>
+              </div>
+            </li>
+          );
+        })}
         {blocks.length === 0 && (
           <p className="text-sm text-slate-400">
             Nothing scheduled yet — add a task to get started.
@@ -144,70 +283,141 @@ export default function DashboardPage() {
         +
       </button>
 
-      {showAdd && <AddTaskSheet onClose={() => setShowAdd(false)} onSaved={load} />}
+      {showAdd && (
+        <AddTaskSheet onClose={() => setShowAdd(false)} onSaved={load} />
+      )}
+      {editing && (
+        <AddTaskSheet
+          onClose={() => setEditing(null)}
+          onSaved={load}
+          editingType={editing.type}
+          editingRow={editing.row}
+        />
+      )}
     </main>
   );
 }
-
-type TaskKind = "fixed" | "flex" | "personal";
 
 type DraftTask = {
   type: TaskKind;
   title: string;
   duration_minutes: number;
-  deadline: string; // YYYY-MM-DD, flex only
+  deadline: string; // flex only
   start_minutes: number; // fixed only
   end_minutes: number; // fixed only
+  recurrence: "weekly" | "once"; // fixed only
+  day_of_week: number; // fixed only, when recurrence === "weekly"
+  event_date: string; // fixed only, when recurrence === "once"
   weekly_quota_minutes: number; // personal only
 };
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-async function insertTask(userId: string, draft: DraftTask) {
-  if (draft.type === "fixed") {
-    return supabase.from("planner_fixed_events").insert({
-      user_id: userId,
-      title: draft.title,
-      start_minutes: draft.start_minutes,
-      end_minutes: draft.end_minutes,
-    });
-  }
-  if (draft.type === "flex") {
-    return supabase.from("planner_flex_tasks").insert({
-      user_id: userId,
-      title: draft.title,
-      duration_minutes: draft.duration_minutes,
-      deadline: draft.deadline,
-    });
-  }
-  return supabase.from("planner_personal_tasks").insert({
-    user_id: userId,
-    title: draft.title,
-    duration_minutes: draft.duration_minutes,
-    weekly_quota_minutes: draft.weekly_quota_minutes,
-  });
-}
-
-function AddTaskSheet({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [stage, setStage] = useState<"input" | "review">("input");
-  const [quickText, setQuickText] = useState("");
-  const [draft, setDraft] = useState<DraftTask>({
+function defaultDraft(): DraftTask {
+  const now = new Date();
+  return {
     type: "flex",
     title: "",
     duration_minutes: 60,
     deadline: todayISO(),
     start_minutes: 9 * 60,
     end_minutes: 10 * 60,
+    recurrence: "weekly",
+    day_of_week: now.getDay(),
+    event_date: todayISO(),
     weekly_quota_minutes: 60,
-  });
+  };
+}
+
+function draftFromRow(type: TaskKind, row: RawRow): DraftTask {
+  const base = defaultDraft();
+  if (type === "fixed") {
+    return {
+      ...base,
+      type,
+      title: row.title,
+      start_minutes: row.start_minutes,
+      end_minutes: row.end_minutes,
+      recurrence: row.event_date ? "once" : "weekly",
+      day_of_week: row.day_of_week ?? base.day_of_week,
+      event_date: row.event_date ?? base.event_date,
+    };
+  }
+  if (type === "flex") {
+    return {
+      ...base,
+      type,
+      title: row.title,
+      duration_minutes: row.duration_minutes,
+      deadline: row.deadline,
+    };
+  }
+  return {
+    ...base,
+    type,
+    title: row.title,
+    duration_minutes: row.duration_minutes ?? 60,
+    weekly_quota_minutes: row.weekly_quota_minutes ?? 60,
+  };
+}
+
+async function insertOrUpdateTask(
+  userId: string,
+  draft: DraftTask,
+  editingRowId?: string
+) {
+  const table = TABLE_BY_TYPE[draft.type];
+
+  let payload: Record<string, any>;
+  if (draft.type === "fixed") {
+    payload = {
+      user_id: userId,
+      title: draft.title,
+      start_minutes: draft.start_minutes,
+      end_minutes: draft.end_minutes,
+      day_of_week: draft.recurrence === "weekly" ? draft.day_of_week : null,
+      event_date: draft.recurrence === "once" ? draft.event_date : null,
+    };
+  } else if (draft.type === "flex") {
+    payload = {
+      user_id: userId,
+      title: draft.title,
+      duration_minutes: draft.duration_minutes,
+      deadline: draft.deadline,
+    };
+  } else {
+    payload = {
+      user_id: userId,
+      title: draft.title,
+      duration_minutes: draft.duration_minutes,
+      weekly_quota_minutes: draft.weekly_quota_minutes,
+    };
+  }
+
+  if (editingRowId) {
+    delete payload.user_id; // never change ownership on update
+    return supabase.from(table).update(payload).eq("id", editingRowId);
+  }
+  return supabase.from(table).insert(payload);
+}
+
+function AddTaskSheet({
+  onClose,
+  onSaved,
+  editingType,
+  editingRow,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+  editingType?: TaskKind;
+  editingRow?: RawRow;
+}) {
+  const isEditing = !!editingType && !!editingRow;
+  const [stage, setStage] = useState<"input" | "review">(
+    isEditing ? "review" : "input"
+  );
+  const [quickText, setQuickText] = useState("");
+  const [draft, setDraft] = useState<DraftTask>(
+    isEditing ? draftFromRow(editingType!, editingRow!) : defaultDraft()
+  );
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -227,13 +437,18 @@ function AddTaskSheet({
         setParsing(false);
         return;
       }
+      const base = defaultDraft();
       setDraft({
+        ...base,
         type: parsed.type ?? "flex",
         title: parsed.title ?? quickText,
         duration_minutes: parsed.duration_minutes ?? 60,
-        deadline: parsed.deadline ?? todayISO(),
-        start_minutes: parsed.start_minutes ?? 9 * 60,
-        end_minutes: parsed.end_minutes ?? 10 * 60,
+        deadline: parsed.deadline ?? base.deadline,
+        start_minutes: parsed.start_minutes ?? base.start_minutes,
+        end_minutes: parsed.end_minutes ?? base.end_minutes,
+        recurrence: parsed.event_date ? "once" : "weekly",
+        day_of_week: parsed.day_of_week ?? base.day_of_week,
+        event_date: parsed.event_date ?? base.event_date,
         weekly_quota_minutes: parsed.weekly_quota_minutes ?? 60,
       });
       setStage("review");
@@ -259,10 +474,14 @@ function AddTaskSheet({
       setSaving(false);
       return;
     }
-    const { error: insertError } = await insertTask(user.id, draft);
+    const { error: dbError } = await insertOrUpdateTask(
+      user.id,
+      draft,
+      editingRow?.id
+    );
     setSaving(false);
-    if (insertError) {
-      setError(insertError.message);
+    if (dbError) {
+      setError(dbError.message);
       return;
     }
     onSaved();
@@ -271,7 +490,7 @@ function AddTaskSheet({
 
   return (
     <div className="fixed inset-0 flex items-end bg-black/30">
-      <div className="w-full rounded-t-2xl bg-white p-6">
+      <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-6">
         {stage === "input" ? (
           <>
             <h2 className="mb-4 text-lg font-semibold">Add task</h2>
@@ -286,9 +505,7 @@ function AddTaskSheet({
             <p className="mb-4 text-xs text-slate-400">
               Describe the task naturally, or skip straight to the form below.
             </p>
-            {error && (
-              <p className="mb-4 text-sm text-red-600">{error}</p>
-            )}
+            {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button
                 onClick={onClose}
@@ -314,27 +531,31 @@ function AddTaskSheet({
         ) : (
           <>
             <h2 className="mb-4 text-lg font-semibold">
-              Review before saving
+              {isEditing ? "Edit task" : "Review before saving"}
             </h2>
 
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              Type
-            </label>
-            <div className="mb-3 flex gap-2">
-              {(["fixed", "flex", "personal"] as const).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setDraft((d) => ({ ...d, type: k }))}
-                  className={`rounded-full px-3 py-1 text-sm ${
-                    draft.type === k
-                      ? "bg-indigo-600 text-white"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
+            {!isEditing && (
+              <>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Type
+                </label>
+                <div className="mb-3 flex gap-2">
+                  {(["fixed", "flex", "personal"] as const).map((k) => (
+                    <button
+                      key={k}
+                      onClick={() => setDraft((d) => ({ ...d, type: k }))}
+                      className={`rounded-full px-3 py-1 text-sm ${
+                        draft.type === k
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <label className="mb-1 block text-xs font-medium text-slate-500">
               Title
@@ -384,40 +605,106 @@ function AddTaskSheet({
             )}
 
             {draft.type === "fixed" && (
-              <div className="mb-3 flex gap-3">
-                <div className="flex-1">
-                  <label className="mb-1 block text-xs font-medium text-slate-500">
-                    Start time
-                  </label>
-                  <input
-                    type="time"
-                    value={minutesToTime(draft.start_minutes)}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        start_minutes: timeToMinutes(e.target.value),
-                      }))
-                    }
-                    className="w-full rounded-lg border p-2"
-                  />
+              <>
+                <div className="mb-3 flex gap-3">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                      Start time
+                    </label>
+                    <input
+                      type="time"
+                      value={minutesToTime(draft.start_minutes)}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          start_minutes: timeToMinutes(e.target.value),
+                        }))
+                      }
+                      className="w-full rounded-lg border p-2"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                      End time
+                    </label>
+                    <input
+                      type="time"
+                      value={minutesToTime(draft.end_minutes)}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          end_minutes: timeToMinutes(e.target.value),
+                        }))
+                      }
+                      className="w-full rounded-lg border p-2"
+                    />
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <label className="mb-1 block text-xs font-medium text-slate-500">
-                    End time
-                  </label>
-                  <input
-                    type="time"
-                    value={minutesToTime(draft.end_minutes)}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        end_minutes: timeToMinutes(e.target.value),
-                      }))
+
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Repeats
+                </label>
+                <div className="mb-3 flex gap-2">
+                  <button
+                    onClick={() =>
+                      setDraft((d) => ({ ...d, recurrence: "weekly" }))
                     }
-                    className="w-full rounded-lg border p-2"
-                  />
+                    className={`rounded-full px-3 py-1 text-sm ${
+                      draft.recurrence === "weekly"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    Every week
+                  </button>
+                  <button
+                    onClick={() =>
+                      setDraft((d) => ({ ...d, recurrence: "once" }))
+                    }
+                    className={`rounded-full px-3 py-1 text-sm ${
+                      draft.recurrence === "once"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    Just once
+                  </button>
                 </div>
-              </div>
+
+                {draft.recurrence === "weekly" ? (
+                  <div className="mb-3 flex gap-1">
+                    {WEEKDAY_LABELS.map((label, i) => (
+                      <button
+                        key={label}
+                        onClick={() =>
+                          setDraft((d) => ({ ...d, day_of_week: i }))
+                        }
+                        className={`flex-1 rounded-lg py-1 text-xs ${
+                          draft.day_of_week === i
+                            ? "bg-indigo-600 text-white"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mb-3">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={draft.event_date}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, event_date: e.target.value }))
+                      }
+                      className="w-full rounded-lg border p-2"
+                    />
+                  </div>
+                )}
+              </>
             )}
 
             {draft.type === "personal" && (
@@ -449,17 +736,17 @@ function AddTaskSheet({
 
             <div className="flex gap-2">
               <button
-                onClick={() => setStage("input")}
+                onClick={() => (isEditing ? onClose() : setStage("input"))}
                 className="flex-1 rounded-lg border py-2 text-slate-600"
               >
-                Back
+                {isEditing ? "Cancel" : "Back"}
               </button>
               <button
                 onClick={save}
                 disabled={saving || !draft.title.trim()}
                 className="flex-1 rounded-lg bg-indigo-600 py-2 text-white disabled:opacity-50"
               >
-                {saving ? "Saving…" : "Add task"}
+                {saving ? "Saving…" : isEditing ? "Save changes" : "Add task"}
               </button>
             </div>
           </>

@@ -12,6 +12,28 @@ export type FlexTask = {
   dueDate: string; // ISO date
 };
 
+export type PersonalTask = {
+  id: string;
+  title: string;
+  weeklyQuotaMinutes: number;
+  // Minutes already used this week (Mon–Sun), so the quota doesn't reset
+  // to full every single day. Callers should track/pass this in.
+  minutesUsedThisWeek?: number;
+};
+
+export type ScheduledBlock = {
+  id: string;
+  // The underlying task row this block came from — a block never gets a
+  // composite string id anymore (previous version tried encoding the
+  // source id + offset into `id`, which silently broke because task ids
+  // are UUIDs already full of dashes).
+  sourceId: string;
+  title: string;
+  start: string;
+  end: string;
+  type: "fixed" | "flex" | "personal";
+};
+
 // Converts between the DB's minutes-since-midnight ints and "HH:MM" strings.
 export function minutesToTime(mins: number): string {
   const h = Math.floor(mins / 60)
@@ -26,25 +48,20 @@ export function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
-export type PersonalTask = {
-  id: string;
-  title: string;
-  weeklyQuotaMinutes: number;
-};
-
-export type ScheduledBlock = {
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  type: "fixed" | "flex" | "personal";
-};
+// Monday-anchored ISO week start, used to key "minutes used this week".
+export function weekStartISO(d: Date = new Date()): string {
+  const day = d.getDay(); // 0 = Sunday
+  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  return monday.toISOString().slice(0, 10);
+}
 
 /**
  * Greedy day scheduler:
  * 1. Fixed events anchor the day and are never moved.
- * 2. Personal tasks get protected slots first, so rest/hobbies aren't
- *    crowded out by academic urgency.
+ * 2. Personal tasks get protected slots first (up to their remaining
+ *    weekly quota), so rest/hobbies aren't crowded out by academic urgency.
  * 3. Flexible academic tasks fill whatever open time remains, ordered
  *    by due-date urgency (soonest deadline first).
  */
@@ -70,6 +87,7 @@ export function scheduleDay(
   const blocks: ScheduledBlock[] = fixed
     .map((f) => ({
       id: f.id,
+      sourceId: f.id,
       title: f.title,
       start: f.start,
       end: f.end,
@@ -87,32 +105,45 @@ export function scheduleDay(
   }
   if (cursor < toMinutes(dayEnd)) gaps.push([cursor, toMinutes(dayEnd)]);
 
-  // Personal tasks claim time first (protected, quota-based).
-  const personalQueue = [...personal];
+  // Personal tasks claim time first, bounded by remaining weekly quota
+  // (quota minus whatever's already been used this week).
+  const personalQueue = personal
+    .map((p) => ({
+      ...p,
+      remaining: Math.max(
+        0,
+        p.weeklyQuotaMinutes - (p.minutesUsedThisWeek ?? 0)
+      ),
+    }))
+    .filter((p) => p.remaining > 0);
+
   for (const gap of gaps) {
     let [gs, ge] = gap;
     while (personalQueue.length && ge - gs > 0) {
       const p = personalQueue[0];
-      const chunk = Math.min(p.weeklyQuotaMinutes, ge - gs);
+      const chunk = Math.min(p.remaining, ge - gs);
       if (chunk <= 0) break;
       blocks.push({
         id: `${p.id}-${gs}`,
+        sourceId: p.id,
         title: p.title,
         start: toTime(gs),
         end: toTime(gs + chunk),
         type: "personal",
       });
       gs += chunk;
-      p.weeklyQuotaMinutes -= chunk;
-      if (p.weeklyQuotaMinutes <= 0) personalQueue.shift();
+      p.remaining -= chunk;
+      if (p.remaining <= 0) personalQueue.shift();
     }
     gap[0] = gs;
   }
 
   // Flexible academic tasks fill the rest, most urgent first.
-  const flexQueue = [...flex].sort(
-    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-  );
+  const flexQueue = [...flex]
+    .map((f) => ({ ...f }))
+    .sort(
+      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    );
   for (const gap of gaps) {
     let [gs, ge] = gap;
     while (flexQueue.length && ge - gs > 0) {
@@ -121,6 +152,7 @@ export function scheduleDay(
       if (chunk <= 0) break;
       blocks.push({
         id: `${t.id}-${gs}`,
+        sourceId: t.id,
         title: t.title,
         start: toTime(gs),
         end: toTime(gs + chunk),

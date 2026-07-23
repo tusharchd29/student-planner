@@ -11,6 +11,10 @@ create table if not exists planner_fixed_events (
   subject text default 'School',
   start_minutes int not null,
   end_minutes int not null,
+  -- Recurrence: if event_date is set, this is a one-off event on that date.
+  -- Else if day_of_week is set (0=Sun..6=Sat, matching JS Date.getDay()),
+  -- it recurs weekly on that day. If neither is set, treated as every day
+  -- (legacy fallback for rows created before recurrence was implemented).
   day_of_week int,
   event_date date,
   google_event_id text,
@@ -36,6 +40,10 @@ create table if not exists planner_personal_tasks (
   duration_minutes int default 60,
   weekly_quota_minutes int,
   done boolean not null default false,
+  -- Monday-anchored week key + minutes logged against it, so the weekly
+  -- quota actually persists instead of resetting to full every day.
+  week_start date,
+  minutes_logged int not null default 0,
   created_at timestamptz not null default now()
 );
 

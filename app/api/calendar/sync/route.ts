@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { scheduleDay, minutesToTime } from "@/lib/scheduler";
+import { scheduleDay, minutesToTime, weekStartISO } from "@/lib/scheduler";
+import { getGoogleClientForUser } from "@/lib/googleAuth";
+import { TABLE_BY_TYPE } from "@/lib/tables";
 
 export async function POST() {
   const supabase = createRouteHandlerClient({ cookies });
@@ -15,75 +17,40 @@ export async function POST() {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const { data: tokenRow, error: tokenError } = await supabase
-    .from("planner_google_tokens")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (tokenError || !tokenRow) {
-    return NextResponse.json(
-      {
-        error:
-          "No Google Calendar connection found. Please sign out and sign in again to grant calendar access.",
-      },
-      { status: 401 }
-    );
+  const { client: oauth2Client, error: authError } =
+    await getGoogleClientForUser(supabase, user.id);
+  if (authError) {
+    return NextResponse.json({ error: authError }, { status: 401 });
   }
 
-  if (!tokenRow.refresh_token) {
-    return NextResponse.json(
-      {
-        error:
-          "Google didn't return a refresh token last time you signed in (this can happen on repeat logins). Please sign out, revoke access at https://myaccount.google.com/permissions, and sign in again.",
-      },
-      { status: 401 }
-    );
-  }
-
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.client_id,
-    process.env.client_secret
-  );
-  oauth2Client.setCredentials({
-    access_token: tokenRow.access_token,
-    refresh_token: tokenRow.refresh_token,
-  });
-
-  // Proactively refresh — cheap, and avoids a failed call if the stored
-  // access token has expired since last sync.
-  try {
-    const { credentials } = await oauth2Client.refreshAccessToken();
-    oauth2Client.setCredentials(credentials);
-    await supabase
-      .from("planner_google_tokens")
-      .update({
-        access_token: credentials.access_token,
-        expires_at: credentials.expiry_date
-          ? new Date(credentials.expiry_date).toISOString()
-          : null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", user.id);
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error:
-          "Google rejected the stored refresh token. Please sign out and sign in again.",
-      },
-      { status: 401 }
-    );
-  }
+  const today = new Date().toISOString().slice(0, 10);
+  const todayDow = new Date().getDay();
+  const currentWeekStart = weekStartISO();
 
   const [{ data: fixedRows }, { data: flexRows }, { data: personalRows }] =
     await Promise.all([
       supabase.from("planner_fixed_events").select("*"),
-      supabase.from("planner_flex_tasks").select("*"),
-      supabase.from("planner_personal_tasks").select("*"),
+      supabase
+        .from("planner_flex_tasks")
+        .select("*")
+        .eq("done", false),
+      supabase
+        .from("planner_personal_tasks")
+        .select("*")
+        .eq("done", false),
     ]);
 
+  // Only fixed events actually happening today (recurring by day_of_week,
+  // a one-off event_date match, or legacy rows with neither set).
+  const todaysFixed = (fixedRows ?? []).filter(
+    (r: any) =>
+      r.event_date === today ||
+      (r.event_date == null && r.day_of_week === todayDow) ||
+      (r.event_date == null && r.day_of_week == null)
+  );
+
   const blocks = scheduleDay(
-    (fixedRows ?? []).map((r: any) => ({
+    todaysFixed.map((r: any) => ({
       id: r.id,
       title: r.title,
       start: minutesToTime(r.start_minutes),
@@ -98,36 +65,69 @@ export async function POST() {
     (personalRows ?? []).map((r: any) => ({
       id: r.id,
       title: r.title,
-      weeklyQuotaMinutes: r.weekly_quota_minutes,
+      weeklyQuotaMinutes: r.weekly_quota_minutes ?? 0,
+      minutesUsedThisWeek:
+        r.week_start === currentWeekStart ? r.minutes_logged : 0,
     }))
   );
 
-  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-  const today = new Date().toISOString().slice(0, 10);
-  // TODO: make this a user preference; hardcoded for now.
-  const timeZone = "Asia/Kolkata";
+  // Lookup of each source row's existing google_event_id, so we update
+  // an already-synced event instead of creating a duplicate every sync.
+  const eventIdByRowId = new Map<string, string | null>();
+  for (const rows of [fixedRows, flexRows, personalRows]) {
+    for (const r of rows ?? []) eventIdByRowId.set(r.id, r.google_event_id);
+  }
 
-  const results = await Promise.allSettled(
-    blocks.map((b) =>
-      calendar.events.insert({
-        calendarId: "primary",
-        requestBody: {
-          summary: b.title,
-          start: { dateTime: `${today}T${b.start}:00`, timeZone },
-          end: { dateTime: `${today}T${b.end}:00`, timeZone },
-          reminders: {
-            useDefault: false,
-            overrides: [{ method: "popup", minutes: 10 }],
-          },
-        },
-      })
-    )
-  );
+  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+  const timeZone = "Asia/Kolkata"; // TODO: make this a user preference
+
+  async function upsertEvent(block: (typeof blocks)[number]) {
+    const requestBody = {
+      summary: block.title,
+      start: { dateTime: `${today}T${block.start}:00`, timeZone },
+      end: { dateTime: `${today}T${block.end}:00`, timeZone },
+      reminders: {
+        useDefault: false,
+        overrides: [{ method: "popup" as const, minutes: 10 }],
+      },
+    };
+
+    const existingEventId = eventIdByRowId.get(block.sourceId);
+    const table = TABLE_BY_TYPE[block.type];
+
+    if (existingEventId) {
+      try {
+        await calendar.events.update({
+          calendarId: "primary",
+          eventId: existingEventId,
+          requestBody,
+        });
+        return;
+      } catch (err: any) {
+        // Event was likely deleted on the Google side — fall through to
+        // creating a fresh one and re-storing its id.
+        if (err?.code !== 404 && err?.response?.status !== 404) throw err;
+      }
+    }
+
+    const inserted = await calendar.events.insert({
+      calendarId: "primary",
+      requestBody,
+    });
+    if (inserted.data.id) {
+      await supabase
+        .from(table)
+        .update({ google_event_id: inserted.data.id })
+        .eq("id", block.sourceId);
+    }
+  }
+
+  const results = await Promise.allSettled(blocks.map(upsertEvent));
 
   const failed = results.filter((r) => r.status === "rejected");
   if (failed.length) {
     console.error(
-      "Some calendar inserts failed:",
+      "Some calendar syncs failed:",
       failed.map((f: any) => f.reason?.message)
     );
   }
