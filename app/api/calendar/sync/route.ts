@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { scheduleDay } from "@/lib/scheduler";
+import { scheduleDay, minutesToTime } from "@/lib/scheduler";
 
 export async function POST() {
   const supabase = createRouteHandlerClient({ cookies });
@@ -29,14 +29,14 @@ export async function POST() {
     (fixedRows ?? []).map((r: any) => ({
       id: r.id,
       title: r.title,
-      start: r.start_time,
-      end: r.end_time,
+      start: minutesToTime(r.start_minutes),
+      end: minutesToTime(r.end_minutes),
     })),
     (flexRows ?? []).map((r: any) => ({
       id: r.id,
       title: r.title,
-      estimatedMinutes: r.estimated_minutes,
-      dueDate: r.due_date,
+      estimatedMinutes: r.duration_minutes,
+      dueDate: r.deadline,
     })),
     (personalRows ?? []).map((r: any) => ({
       id: r.id,

@@ -1,12 +1,19 @@
 -- Student Planner tables, namespaced with planner_ prefix to coexist
--- safely in a shared Supabase project.
+-- safely in a shared Supabase project (Deepak).
+--
+-- NOTE: this reflects the schema actually deployed in the Deepak project.
+-- Re-running this against a fresh project will recreate the same shape.
 
 create table if not exists planner_fixed_events (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users not null default auth.uid(),
   title text not null,
-  start_time text not null,
-  end_time text not null,
+  subject text default 'School',
+  start_minutes int not null,
+  end_minutes int not null,
+  day_of_week int,
+  event_date date,
+  google_event_id text,
   created_at timestamptz not null default now()
 );
 
@@ -14,9 +21,10 @@ create table if not exists planner_flex_tasks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users not null default auth.uid(),
   title text not null,
-  estimated_minutes int not null default 60,
-  due_date date not null,
-  completed boolean not null default false,
+  duration_minutes int not null default 60,
+  deadline date not null,
+  done boolean not null default false,
+  google_event_id text,
   created_at timestamptz not null default now()
 );
 
@@ -24,7 +32,10 @@ create table if not exists planner_personal_tasks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users not null default auth.uid(),
   title text not null,
-  weekly_quota_minutes int not null default 60,
+  category text default 'hobby',
+  duration_minutes int default 60,
+  weekly_quota_minutes int,
+  done boolean not null default false,
   created_at timestamptz not null default now()
 );
 

@@ -1,8 +1,8 @@
 export type FixedEvent = {
   id: string;
   title: string;
-  start: string; // ISO time, e.g. "08:00"
-  end: string; // ISO time, e.g. "14:00"
+  start: string; // "HH:MM"
+  end: string; // "HH:MM"
 };
 
 export type FlexTask = {
@@ -11,6 +11,20 @@ export type FlexTask = {
   estimatedMinutes: number;
   dueDate: string; // ISO date
 };
+
+// Converts between the DB's minutes-since-midnight ints and "HH:MM" strings.
+export function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60)
+    .toString()
+    .padStart(2, "0");
+  const m = (mins % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+export function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
 
 export type PersonalTask = {
   id: string;

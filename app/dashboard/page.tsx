@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import {
   scheduleDay,
+  minutesToTime,
   FixedEvent,
   FlexTask,
   PersonalTask,
@@ -36,14 +37,14 @@ export default function DashboardPage() {
     const fixed: FixedEvent[] = (fixedRows ?? []).map((r: any) => ({
       id: r.id,
       title: r.title,
-      start: r.start_time,
-      end: r.end_time,
+      start: minutesToTime(r.start_minutes),
+      end: minutesToTime(r.end_minutes),
     }));
     const flex: FlexTask[] = (flexRows ?? []).map((r: any) => ({
       id: r.id,
       title: r.title,
-      estimatedMinutes: r.estimated_minutes,
-      dueDate: r.due_date,
+      estimatedMinutes: r.duration_minutes,
+      dueDate: r.deadline,
     }));
     const personal: PersonalTask[] = (personalRows ?? []).map((r: any) => ({
       id: r.id,
@@ -118,19 +119,22 @@ function AddTaskSheet({
   async function save() {
     setSaving(true);
     if (kind === "fixed") {
-      await supabase
+      const { error } = await supabase
         .from("planner_fixed_events")
-        .insert({ title, start_time: "09:00", end_time: "10:00" });
+        .insert({ title, start_minutes: 9 * 60, end_minutes: 10 * 60 });
+      if (error) console.error(error);
     } else if (kind === "flex") {
-      await supabase.from("planner_flex_tasks").insert({
+      const { error } = await supabase.from("planner_flex_tasks").insert({
         title,
-        estimated_minutes: 60,
-        due_date: new Date().toISOString().slice(0, 10),
+        duration_minutes: 60,
+        deadline: new Date().toISOString().slice(0, 10),
       });
+      if (error) console.error(error);
     } else {
-      await supabase
+      const { error } = await supabase
         .from("planner_personal_tasks")
-        .insert({ title, weekly_quota_minutes: 60 });
+        .insert({ title, duration_minutes: 60, weekly_quota_minutes: 60 });
+      if (error) console.error(error);
     }
     setSaving(false);
     onSaved();
