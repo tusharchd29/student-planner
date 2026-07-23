@@ -55,9 +55,26 @@ export default function DashboardPage() {
     setBlocks(scheduleDay(fixed, flex, personal));
   }
 
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   async function syncToCalendar() {
     setSyncing(true);
-    await fetch("/api/calendar/sync", { method: "POST" });
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/calendar/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setSyncMessage(data.error ?? "Sync failed.");
+      } else {
+        setSyncMessage(
+          `Synced ${data.synced} event${data.synced === 1 ? "" : "s"}${
+            data.failed ? ` (${data.failed} failed)` : ""
+          }.`
+        );
+      }
+    } catch (e) {
+      setSyncMessage("Network error while syncing.");
+    }
     setSyncing(false);
   }
 
@@ -73,6 +90,9 @@ export default function DashboardPage() {
           {syncing ? "Syncing…" : "Sync to Google Calendar"}
         </button>
       </div>
+      {syncMessage && (
+        <p className="mb-4 text-sm text-slate-600">{syncMessage}</p>
+      )}
 
       <ol className="space-y-3">
         {blocks.map((b) => (

@@ -8,12 +8,69 @@ export async function POST() {
   const supabase = createRouteHandlerClient({ cookies });
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!session?.provider_token) {
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
+  const { data: tokenRow, error: tokenError } = await supabase
+    .from("planner_google_tokens")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (tokenError || !tokenRow) {
     return NextResponse.json(
-      { error: "Not authenticated with Google" },
+      {
+        error:
+          "No Google Calendar connection found. Please sign out and sign in again to grant calendar access.",
+      },
+      { status: 401 }
+    );
+  }
+
+  if (!tokenRow.refresh_token) {
+    return NextResponse.json(
+      {
+        error:
+          "Google didn't return a refresh token last time you signed in (this can happen on repeat logins). Please sign out, revoke access at https://myaccount.google.com/permissions, and sign in again.",
+      },
+      { status: 401 }
+    );
+  }
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+  );
+  oauth2Client.setCredentials({
+    access_token: tokenRow.access_token,
+    refresh_token: tokenRow.refresh_token,
+  });
+
+  // Proactively refresh — cheap, and avoids a failed call if the stored
+  // access token has expired since last sync.
+  try {
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+    await supabase
+      .from("planner_google_tokens")
+      .update({
+        access_token: credentials.access_token,
+        expires_at: credentials.expiry_date
+          ? new Date(credentials.expiry_date).toISOString()
+          : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id);
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error:
+          "Google rejected the stored refresh token. Please sign out and sign in again.",
+      },
       { status: 401 }
     );
   }
@@ -45,10 +102,7 @@ export async function POST() {
     }))
   );
 
-  const oauth2Client = new google.auth.OAuth2();
-  oauth2Client.setCredentials({ access_token: session.provider_token });
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-
   const today = new Date().toISOString().slice(0, 10);
 
   const results = await Promise.allSettled(
@@ -68,7 +122,16 @@ export async function POST() {
     )
   );
 
-  const failed = results.filter((r) => r.status === "rejected").length;
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length) {
+    console.error(
+      "Some calendar inserts failed:",
+      failed.map((f: any) => f.reason?.message)
+    );
+  }
 
-  return NextResponse.json({ synced: results.length - failed, failed });
+  return NextResponse.json({
+    synced: results.length - failed.length,
+    failed: failed.length,
+  });
 }

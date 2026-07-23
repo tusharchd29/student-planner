@@ -9,6 +9,10 @@ export default function LoginPage() {
       options: {
         scopes: "https://www.googleapis.com/auth/calendar.events",
         redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
       },
     });
   };
