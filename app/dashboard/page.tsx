@@ -6,13 +6,17 @@ import {
   scheduleDay,
   minutesToTime,
   timeToMinutes,
-  weekStartISO,
   FixedEvent,
   FlexTask,
   PersonalTask,
   ScheduledBlock,
 } from "@/lib/scheduler";
 import { TABLE_BY_TYPE, TaskKind } from "@/lib/tables";
+import {
+  todayISOInAppTZ,
+  dayOfWeekInAppTZ,
+  weekStartISOInAppTZ,
+} from "@/lib/timezone";
 
 const typeStyles: Record<ScheduledBlock["type"], string> = {
   fixed: "bg-fixed/10 border-fixed text-fixed",
@@ -23,7 +27,7 @@ const typeStyles: Record<ScheduledBlock["type"], string> = {
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return todayISOInAppTZ();
 }
 
 type RawRow = { id: string; google_event_id: string | null; [k: string]: any };
@@ -44,6 +48,12 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [reslotMessage, setReslotMessage] = useState<string | null>(null);
+  const [addedMessage, setAddedMessage] = useState<string | null>(null);
+
+  async function handleSaved(message?: string) {
+    if (message) setAddedMessage(message);
+    load();
+  }
 
   useEffect(() => {
     load();
@@ -64,9 +74,9 @@ export default function DashboardPage() {
       personal: personalRows ?? [],
     });
 
-    const todayDow = new Date().getDay();
-    const today = todayISO();
-    const currentWeekStart = weekStartISO();
+    const todayDow = dayOfWeekInAppTZ();
+    const today = todayISOInAppTZ();
+    const currentWeekStart = weekStartISOInAppTZ();
 
     // Only fixed events actually happening today: a one-off event_date
     // match, a recurring day_of_week match, or legacy rows with neither
@@ -156,7 +166,7 @@ export default function DashboardPage() {
   async function logPersonalTime(block: ScheduledBlock) {
     const row = rawRowFor(block);
     if (!row) return;
-    const currentWeekStart = weekStartISO();
+    const currentWeekStart = weekStartISOInAppTZ();
     const sameWeek = row.week_start === currentWeekStart;
     const newLogged = (sameWeek ? row.minutes_logged : 0) + (row.duration_minutes ?? 30);
     await supabase
@@ -206,6 +216,11 @@ export default function DashboardPage() {
           {reslotMessage}
         </p>
       )}
+      {addedMessage && (
+        <p className="mb-2 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-700">
+          {addedMessage}
+        </p>
+      )}
       {syncMessage && (
         <p className="mb-4 text-sm text-slate-600">{syncMessage}</p>
       )}
@@ -227,7 +242,7 @@ export default function DashboardPage() {
                   {b.type === "personal" && row && (
                     <div className="mt-1 text-xs text-slate-500">
                       {Math.min(
-                        row.week_start === weekStartISO()
+                        row.week_start === weekStartISOInAppTZ()
                           ? row.minutes_logged
                           : 0,
                         row.weekly_quota_minutes ?? 0
@@ -284,12 +299,12 @@ export default function DashboardPage() {
       </button>
 
       {showAdd && (
-        <AddTaskSheet onClose={() => setShowAdd(false)} onSaved={load} />
+        <AddTaskSheet onClose={() => setShowAdd(false)} onSaved={handleSaved} />
       )}
       {editing && (
         <AddTaskSheet
           onClose={() => setEditing(null)}
-          onSaved={load}
+          onSaved={handleSaved}
           editingType={editing.type}
           editingRow={editing.row}
         />
@@ -312,7 +327,6 @@ type DraftTask = {
 };
 
 function defaultDraft(): DraftTask {
-  const now = new Date();
   return {
     type: "flex",
     title: "",
@@ -321,7 +335,7 @@ function defaultDraft(): DraftTask {
     start_minutes: 9 * 60,
     end_minutes: 10 * 60,
     recurrence: "weekly",
-    day_of_week: now.getDay(),
+    day_of_week: dayOfWeekInAppTZ(),
     event_date: todayISO(),
     weekly_quota_minutes: 60,
   };
@@ -406,7 +420,7 @@ function AddTaskSheet({
   editingRow,
 }: {
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (message?: string) => void;
   editingType?: TaskKind;
   editingRow?: RawRow;
 }) {
@@ -484,7 +498,25 @@ function AddTaskSheet({
       setError(dbError.message);
       return;
     }
-    onSaved();
+
+    // Build an explicit confirmation of what actually got saved and when —
+    // silently closing the sheet after a save made it impossible to tell
+    // "saved but scheduled for a day you're not viewing" apart from
+    // "didn't save at all".
+    let when = "";
+    if (draft.type === "flex") {
+      when = `due ${draft.deadline}`;
+    } else if (draft.type === "fixed") {
+      when =
+        draft.recurrence === "weekly"
+          ? `every ${WEEKDAY_LABELS[draft.day_of_week]}`
+          : `on ${draft.event_date}`;
+    } else {
+      when = `${draft.weekly_quota_minutes} min/week`;
+    }
+    onSaved(
+      `${isEditing ? "Updated" : "Added"} "${draft.title}" (${draft.type}, ${when}).`
+    );
     onClose();
   }
 

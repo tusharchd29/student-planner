@@ -36,28 +36,35 @@ export async function callGroqJSON(
   }
 }
 
+import {
+  todayISOInAppTZ,
+  weekdayNameInAppTZ,
+  addDaysISOInAppTZ,
+} from "./timezone";
+
 // "2026-07-23" style date, plus day-of-week name, for grounding relative
 // dates ("Friday", "next week") in prompts sent to Groq. Also precomputes
 // tomorrow and the day after, since LLMs are unreliable at date arithmetic
 // on their own — better to hand them the answer than ask them to compute it.
+//
+// Crucially, all of this is computed in the app's fixed timezone (see
+// lib/timezone.ts) rather than the server's raw system clock — Vercel runs
+// in UTC, so without this, "today" server-side could silently disagree
+// with the user's actual local day, especially at night in IST.
 export function todayContext(): string {
-  const now = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const weekday = (d: Date) => d.toLocaleDateString("en-US", { weekday: "long" });
-
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  const dayAfter = new Date(now);
-  dayAfter.setDate(now.getDate() + 2);
+  const today = todayISOInAppTZ();
+  const weekday = weekdayNameInAppTZ();
+  const tomorrow = addDaysISOInAppTZ(1);
+  const dayAfter = addDaysISOInAppTZ(2);
 
   const weekdayDates: string[] = [];
   for (let i = 1; i <= 7; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + i);
-    weekdayDates.push(`${weekday(d)} = ${fmt(d)}`);
+    const d = new Date(`${today}T00:00:00`);
+    d.setDate(d.getDate() + i);
+    weekdayDates.push(`${weekdayNameInAppTZ(d)} = ${addDaysISOInAppTZ(i)}`);
   }
 
-  return `Today is ${weekday(now)}, ${fmt(now)}.
-"tomorrow" = ${fmt(tomorrow)}. "day after tomorrow" = ${fmt(dayAfter)}.
+  return `Today is ${weekday}, ${today}.
+"tomorrow" = ${tomorrow}. "day after tomorrow" = ${dayAfter}.
 Upcoming weekday dates (use these exact values, do not compute your own): ${weekdayDates.join(", ")}.`;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { callGroqJSON, todayContext } from "@/lib/groq";
+import { todayISOInAppTZ } from "@/lib/timezone";
 
 const SYSTEM_PROMPT = `You are helping re-slot missed student tasks.
 
@@ -37,7 +38,7 @@ export async function POST() {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISOInAppTZ();
 
   const [{ data: missed }, { data: upcoming }] = await Promise.all([
     supabase

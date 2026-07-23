@@ -48,14 +48,10 @@ export function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
-// Monday-anchored ISO week start, used to key "minutes used this week".
-export function weekStartISO(d: Date = new Date()): string {
-  const day = d.getDay(); // 0 = Sunday
-  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
-  const monday = new Date(d);
-  monday.setDate(d.getDate() + diff);
-  return monday.toISOString().slice(0, 10);
-}
+// Monday-anchored week starts are now computed in lib/timezone.ts
+// (weekStartISOInAppTZ), which is timezone-aware — this file's version was
+// superseded because it used the server's raw system clock, which drifted
+// against the user's actual local day near midnight IST.
 
 /**
  * Greedy day scheduler:

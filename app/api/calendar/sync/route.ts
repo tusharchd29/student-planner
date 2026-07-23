@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { scheduleDay, minutesToTime, weekStartISO } from "@/lib/scheduler";
+import { scheduleDay, minutesToTime } from "@/lib/scheduler";
 import { getGoogleClientForUser } from "@/lib/googleAuth";
 import { TABLE_BY_TYPE } from "@/lib/tables";
+import { todayISOInAppTZ, dayOfWeekInAppTZ, weekStartISOInAppTZ, APP_TIMEZONE } from "@/lib/timezone";
 
 export async function POST() {
   const supabase = createRouteHandlerClient({ cookies });
@@ -23,9 +24,9 @@ export async function POST() {
     return NextResponse.json({ error: authError }, { status: 401 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayDow = new Date().getDay();
-  const currentWeekStart = weekStartISO();
+  const today = todayISOInAppTZ();
+  const todayDow = dayOfWeekInAppTZ();
+  const currentWeekStart = weekStartISOInAppTZ();
 
   const [{ data: fixedRows }, { data: flexRows }, { data: personalRows }] =
     await Promise.all([
@@ -79,7 +80,7 @@ export async function POST() {
   }
 
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-  const timeZone = "Asia/Kolkata"; // TODO: make this a user preference
+  const timeZone = APP_TIMEZONE;
 
   async function upsertEvent(block: (typeof blocks)[number]) {
     const requestBody = {
