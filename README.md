@@ -52,5 +52,7 @@ include the production domain.
 
 - ~~Phase 3: Groq-powered natural-language task entry~~ ✅ done — "Quick add"
   in the Add Task sheet, plus automatic missed-task re-slotting on load
-- Phase 4: adaptive reminders, streaks/nudges
+- ~~Phase 4: adaptive reminders + streaks~~ ✅ done — calendar reminder lead
+  time now scales with task urgency/duration instead of a flat 10 minutes,
+  and personal tasks track a weekly-quota streak (current + longest)
 - Phase 5: Groq-generated weekly narrative report

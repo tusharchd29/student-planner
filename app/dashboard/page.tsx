@@ -48,6 +48,7 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [reslotMessage, setReslotMessage] = useState<string | null>(null);
+  const [streakMessage, setStreakMessage] = useState<string | null>(null);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
 
   async function handleSaved(message?: string) {
@@ -58,6 +59,7 @@ export default function DashboardPage() {
   useEffect(() => {
     load();
     checkMissedTasks();
+    rollWeek();
   }, []);
 
   async function load() {
@@ -119,6 +121,25 @@ export default function DashboardPage() {
         setReslotMessage(
           data.summary ?? `Re-slotted ${data.reslotted} missed task(s).`
         );
+        load();
+      }
+    } catch {
+      // Non-critical — silently skip if this fails.
+    }
+  }
+
+  async function rollWeek() {
+    try {
+      const res = await fetch("/api/tasks/roll-week", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.rolled > 0) {
+        const parts = (data.changes as { title: string; streak: number; met: boolean }[]).map(
+          (c) =>
+            c.met
+              ? `🔥 ${c.title}: ${c.streak}-week streak!`
+              : `${c.title}: streak reset.`
+        );
+        setStreakMessage(parts.join(" "));
         load();
       }
     } catch {
@@ -216,6 +237,11 @@ export default function DashboardPage() {
           {reslotMessage}
         </p>
       )}
+      {streakMessage && (
+        <p className="mb-2 rounded-lg bg-orange-50 p-2 text-sm text-orange-700">
+          {streakMessage}
+        </p>
+      )}
       {addedMessage && (
         <p className="mb-2 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-700">
           {addedMessage}
@@ -248,6 +274,11 @@ export default function DashboardPage() {
                         row.weekly_quota_minutes ?? 0
                       )}
                       /{row.weekly_quota_minutes ?? 0} min this week
+                      {row.current_streak > 0 && (
+                        <span className="ml-2 text-orange-600">
+                          🔥 {row.current_streak}wk
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

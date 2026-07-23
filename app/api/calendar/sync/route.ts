@@ -6,6 +6,7 @@ import { scheduleDay, minutesToTime } from "@/lib/scheduler";
 import { getGoogleClientForUser } from "@/lib/googleAuth";
 import { TABLE_BY_TYPE } from "@/lib/tables";
 import { todayISOInAppTZ, dayOfWeekInAppTZ, weekStartISOInAppTZ, APP_TIMEZONE } from "@/lib/timezone";
+import { computeReminders } from "@/lib/reminders";
 
 export async function POST() {
   const supabase = createRouteHandlerClient({ cookies });
@@ -79,17 +80,47 @@ export async function POST() {
     for (const r of rows ?? []) eventIdByRowId.set(r.id, r.google_event_id);
   }
 
+  // Duration/deadline metadata per row, used to scale reminder lead time
+  // by urgency instead of a flat 10 minutes for everything (see lib/reminders.ts).
+  const metaByRowId = new Map<
+    string,
+    { durationMinutes: number; deadline?: string }
+  >();
+  for (const r of flexRows ?? []) {
+    metaByRowId.set(r.id, {
+      durationMinutes: r.duration_minutes,
+      deadline: r.deadline,
+    });
+  }
+  for (const r of personalRows ?? []) {
+    metaByRowId.set(r.id, { durationMinutes: r.duration_minutes ?? 30 });
+  }
+
+  const todayMidnight = new Date(`${today}T00:00:00`).getTime();
+
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
   const timeZone = APP_TIMEZONE;
 
   async function upsertEvent(block: (typeof blocks)[number]) {
+    const meta = metaByRowId.get(block.sourceId);
+    const daysUntilDue = meta?.deadline
+      ? Math.round(
+          (new Date(`${meta.deadline}T00:00:00`).getTime() - todayMidnight) /
+            86400000
+        )
+      : undefined;
+
     const requestBody = {
       summary: block.title,
       start: { dateTime: `${today}T${block.start}:00`, timeZone },
       end: { dateTime: `${today}T${block.end}:00`, timeZone },
       reminders: {
         useDefault: false,
-        overrides: [{ method: "popup" as const, minutes: 10 }],
+        overrides: computeReminders({
+          type: block.type,
+          durationMinutes: meta?.durationMinutes ?? 30,
+          daysUntilDue,
+        }),
       },
     };
 

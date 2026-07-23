@@ -44,6 +44,10 @@ create table if not exists planner_personal_tasks (
   -- quota actually persists instead of resetting to full every day.
   week_start date,
   minutes_logged int not null default 0,
+  -- Consecutive weeks the quota was actually met, and the best run ever.
+  -- Rolled over by POST /api/tasks/roll-week when a new week starts.
+  current_streak int not null default 0,
+  longest_streak int not null default 0,
   created_at timestamptz not null default now()
 );
 
