@@ -61,7 +61,6 @@ include the production domain.
   coming week), cached per week with a regenerate option
 
 All originally planned phases are complete. Known remaining gaps (from the
-code audit): per-user timezone preference (currently hardcoded to
-Asia/Kolkata), a week-ahead view beyond "Today", configurable day
-start/end for the scheduler, rate limiting on Groq-backed routes, and
-automated tests.
+code audit): a week-ahead view beyond "Today", configurable day start/end
+for the scheduler, and broader test coverage beyond lib/scheduler.ts and
+lib/timezone.ts (`npm test` runs the current suite).
