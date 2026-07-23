@@ -48,7 +48,25 @@ create table if not exists planner_flex_tasks (
   created_at timestamptz not null default now()
 );
 
--- One cached Groq-generated narrative report per user per week.
+-- Per-user preferences. Currently just timezone — replaces what used to be
+-- a hardcoded Asia/Kolkata constant used for every date/day-of-week
+-- calculation in the app, which silently gave every non-Indian user wrong
+-- days (including tasks disappearing from view — see the earlier bug
+-- writeup). Detected from the browser on first login; see resolveTimezone()
+-- in app/dashboard/page.tsx.
+create table if not exists planner_user_settings (
+  user_id uuid primary key references auth.users default auth.uid(),
+  timezone text not null default 'Asia/Kolkata',
+  updated_at timestamptz not null default now()
+);
+
+alter table planner_user_settings enable row level security;
+
+create policy "Users manage their own settings"
+  on planner_user_settings for all
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
 create table if not exists planner_weekly_reports (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users not null default auth.uid(),

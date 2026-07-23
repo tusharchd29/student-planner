@@ -37,9 +37,9 @@ export async function callGroqJSON(
 }
 
 import {
-  todayISOInAppTZ,
-  weekdayNameInAppTZ,
-  addDaysISOInAppTZ,
+  todayISOInTZ,
+  weekdayNameInTZ,
+  addDaysISOInTZ,
 } from "./timezone";
 
 // "2026-07-23" style date, plus day-of-week name, for grounding relative
@@ -47,21 +47,21 @@ import {
 // tomorrow and the day after, since LLMs are unreliable at date arithmetic
 // on their own — better to hand them the answer than ask them to compute it.
 //
-// Crucially, all of this is computed in the app's fixed timezone (see
-// lib/timezone.ts) rather than the server's raw system clock — Vercel runs
-// in UTC, so without this, "today" server-side could silently disagree
-// with the user's actual local day, especially at night in IST.
-export function todayContext(): string {
-  const today = todayISOInAppTZ();
-  const weekday = weekdayNameInAppTZ();
-  const tomorrow = addDaysISOInAppTZ(1);
-  const dayAfter = addDaysISOInAppTZ(2);
+// Crucially, all of this is computed in the user's own timezone (see
+// lib/timezone.ts / lib/userSettings.ts) rather than the server's raw
+// system clock — Vercel runs in UTC, so without this, "today" server-side
+// could silently disagree with the user's actual local day.
+export function todayContext(tz: string): string {
+  const today = todayISOInTZ(tz);
+  const weekday = weekdayNameInTZ(tz);
+  const tomorrow = addDaysISOInTZ(tz, 1);
+  const dayAfter = addDaysISOInTZ(tz, 2);
 
   const weekdayDates: string[] = [];
   for (let i = 1; i <= 7; i++) {
     const d = new Date(`${today}T00:00:00`);
     d.setDate(d.getDate() + i);
-    weekdayDates.push(`${weekdayNameInAppTZ(d)} = ${addDaysISOInAppTZ(i)}`);
+    weekdayDates.push(`${weekdayNameInTZ(tz, d)} = ${addDaysISOInTZ(tz, i)}`);
   }
 
   return `Today is ${weekday}, ${today}.

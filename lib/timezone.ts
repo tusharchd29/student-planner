@@ -1,13 +1,15 @@
-// The whole app currently hardcodes one timezone rather than storing a
-// per-user preference (a known gap — see audit notes). Centralizing it here
-// at least means every date calculation (server routes running on Vercel's
-// UTC clock, and the browser client) agrees on what "today" means, instead
-// of drifting against each other near midnight IST.
-export const APP_TIMEZONE = "Asia/Kolkata";
+// Every date/day-of-week calculation in the app now takes an explicit
+// timezone rather than assuming one. Previously this was hardcoded to
+// Asia/Kolkata everywhere — fine for a single user in India, silently
+// wrong (and silently DROPPING TASKS from view, per the bug we hit
+// earlier) for anyone else. DEFAULT_TIMEZONE is only a fallback for rows
+// that predate per-user settings; see lib/userSettings.ts for how the
+// real per-user value is looked up.
+export const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
-function partsInTZ(d: Date) {
+function partsInTZ(d: Date, tz: string) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TIMEZONE,
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -31,30 +33,43 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Saturday: 6,
 };
 
-export function todayISOInAppTZ(d: Date = new Date()): string {
-  return partsInTZ(d).date;
+export function todayISOInTZ(tz: string, d: Date = new Date()): string {
+  return partsInTZ(d, tz).date;
 }
 
-export function dayOfWeekInAppTZ(d: Date = new Date()): number {
-  return WEEKDAY_INDEX[partsInTZ(d).weekday];
+export function dayOfWeekInTZ(tz: string, d: Date = new Date()): number {
+  return WEEKDAY_INDEX[partsInTZ(d, tz).weekday];
 }
 
-export function weekdayNameInAppTZ(d: Date = new Date()): string {
-  return partsInTZ(d).weekday;
+export function weekdayNameInTZ(tz: string, d: Date = new Date()): string {
+  return partsInTZ(d, tz).weekday;
 }
 
-export function addDaysISOInAppTZ(daysFromNow: number, base: Date = new Date()): string {
-  // Compute in the app timezone's "today", then add whole days — avoids DST/
-  // offset edge cases since we're just doing calendar-date arithmetic.
-  const todayStr = todayISOInAppTZ(base);
+export function addDaysISOInTZ(
+  tz: string,
+  daysFromNow: number,
+  base: Date = new Date()
+): string {
+  const todayStr = todayISOInTZ(tz, base);
   const d = new Date(`${todayStr}T00:00:00`);
   d.setDate(d.getDate() + daysFromNow);
   return d.toISOString().slice(0, 10);
 }
 
-// Monday-anchored ISO week start, in the app timezone.
-export function weekStartISOInAppTZ(base: Date = new Date()): string {
-  const dow = dayOfWeekInAppTZ(base); // 0 = Sunday
+// Monday-anchored ISO week start, in the given timezone.
+export function weekStartISOInTZ(tz: string, base: Date = new Date()): string {
+  const dow = dayOfWeekInTZ(tz, base); // 0 = Sunday
   const diff = dow === 0 ? -6 : 1 - dow;
-  return addDaysISOInAppTZ(diff, base);
+  return addDaysISOInTZ(tz, diff, base);
+}
+
+// Validates a string is a real IANA timezone name Intl actually accepts,
+// so a bad value (typo, injection attempt) can't silently corrupt date math.
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }

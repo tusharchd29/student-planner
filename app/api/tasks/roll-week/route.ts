@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { weekStartISOInAppTZ } from "@/lib/timezone";
+import { weekStartISOInTZ } from "@/lib/timezone";
 import { guard } from "@/lib/apiGuard";
+import { getUserTimezone } from "@/lib/userSettings";
 
 // Detects personal tasks whose tracked week has ended, evaluates whether
 // the weekly quota was actually met, and updates their streak — then
@@ -11,9 +12,10 @@ export async function POST() {
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-  const { supabase } = auth;
+  const { supabase, user } = auth;
 
-  const currentWeekStart = weekStartISOInAppTZ();
+  const tz = await getUserTimezone(supabase, user.id);
+  const currentWeekStart = weekStartISOInTZ(tz);
 
   const { data: rows } = await supabase
     .from("planner_personal_tasks")

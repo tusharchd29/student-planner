@@ -4,7 +4,8 @@ import { guard } from "@/lib/apiGuard";
 import { scheduleDay, minutesToTime } from "@/lib/scheduler";
 import { getGoogleClientForUser } from "@/lib/googleAuth";
 import { TABLE_BY_TYPE } from "@/lib/tables";
-import { todayISOInAppTZ, dayOfWeekInAppTZ, weekStartISOInAppTZ, APP_TIMEZONE } from "@/lib/timezone";
+import { todayISOInTZ, dayOfWeekInTZ, weekStartISOInTZ } from "@/lib/timezone";
+import { getUserTimezone } from "@/lib/userSettings";
 import { computeReminders } from "@/lib/reminders";
 
 export async function POST() {
@@ -22,9 +23,10 @@ export async function POST() {
     return NextResponse.json({ error: authError }, { status: 401 });
   }
 
-  const today = todayISOInAppTZ();
-  const todayDow = dayOfWeekInAppTZ();
-  const currentWeekStart = weekStartISOInAppTZ();
+  const tz = await getUserTimezone(supabase, user.id);
+  const today = todayISOInTZ(tz);
+  const todayDow = dayOfWeekInTZ(tz);
+  const currentWeekStart = weekStartISOInTZ(tz);
 
   const [{ data: fixedRows }, { data: flexRows }, { data: personalRows }] =
     await Promise.all([
@@ -96,7 +98,7 @@ export async function POST() {
   const todayMidnight = new Date(`${today}T00:00:00`).getTime();
 
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-  const timeZone = APP_TIMEZONE;
+  const timeZone = tz;
 
   async function upsertEvent(block: (typeof blocks)[number]) {
     const meta = metaByRowId.get(block.sourceId);

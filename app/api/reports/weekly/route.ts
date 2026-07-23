@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGroqJSON, todayContext } from "@/lib/groq";
 import { guard } from "@/lib/apiGuard";
+import { getUserTimezone } from "@/lib/userSettings";
 import {
-  todayISOInAppTZ,
-  addDaysISOInAppTZ,
-  weekStartISOInAppTZ,
+  todayISOInTZ,
+  addDaysISOInTZ,
+  weekStartISOInTZ,
 } from "@/lib/timezone";
 
-const SYSTEM_PROMPT = `You write a short, friendly weekly review for a student
+function buildSystemPrompt(tz: string): string {
+  return `You write a short, friendly weekly review for a student
 based on their planner data, and return ONLY a JSON object:
 
 { "report": "<the report text>" }
 
-${todayContext()}
+${todayContext(tz)}
 
 Guidelines for the report text:
 - 3 to 6 sentences, warm and encouraging but honest — don't sugarcoat
@@ -25,6 +27,7 @@ Guidelines for the report text:
 - Mention specific task titles where it helps, but don't list everything.
 - Plain text only: no markdown, no bullet points, no emoji spam (one 🔥
   for a notable streak is fine).`;
+}
 
 export async function POST(request: NextRequest) {
   // Auth first, unconditionally. The rate limit is applied later — only
@@ -38,7 +41,8 @@ export async function POST(request: NextRequest) {
 
   const { force } = await request.json().catch(() => ({ force: false }));
 
-  const weekStart = weekStartISOInAppTZ();
+  const tz = await getUserTimezone(supabase, user.id);
+  const weekStart = weekStartISOInTZ(tz);
 
   // Serve the cached report for this week unless a regeneration was asked for.
   if (!force) {
@@ -69,9 +73,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const today = todayISOInAppTZ();
-  const sevenDaysAgo = addDaysISOInAppTZ(-7);
-  const sevenDaysAhead = addDaysISOInAppTZ(7);
+  const today = todayISOInTZ(tz);
+  const sevenDaysAgo = addDaysISOInTZ(tz, -7);
+  const sevenDaysAhead = addDaysISOInTZ(tz, 7);
 
   const [
     { data: completed },
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest) {
 
   let result: { report: string };
   try {
-    result = await callGroqJSON(SYSTEM_PROMPT, JSON.stringify(reportInput));
+    result = await callGroqJSON(buildSystemPrompt(tz), JSON.stringify(reportInput));
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message ?? "Failed to generate report" },

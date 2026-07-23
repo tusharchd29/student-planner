@@ -13,9 +13,10 @@ import {
 } from "@/lib/scheduler";
 import { TABLE_BY_TYPE, TaskKind } from "@/lib/tables";
 import {
-  todayISOInAppTZ,
-  dayOfWeekInAppTZ,
-  weekStartISOInAppTZ,
+  todayISOInTZ,
+  dayOfWeekInTZ,
+  weekStartISOInTZ,
+  DEFAULT_TIMEZONE,
 } from "@/lib/timezone";
 
 const typeStyles: Record<ScheduledBlock["type"], string> = {
@@ -26,15 +27,12 @@ const typeStyles: Record<ScheduledBlock["type"], string> = {
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function todayISO() {
-  return todayISOInAppTZ();
-}
-
 type RawRow = { id: string; google_event_id: string | null; [k: string]: any };
 
 
 export default function DashboardPage() {
   const [blocks, setBlocks] = useState<ScheduledBlock[]>([]);
+  const [tz, setTz] = useState(DEFAULT_TIMEZONE);
   const [rawRows, setRawRows] = useState<{
     fixed: RawRow[];
     flex: RawRow[];
@@ -81,12 +79,45 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    load();
+    resolveTimezone().then((resolvedTz) => {
+      load(resolvedTz);
+    });
     checkMissedTasks();
     rollWeek();
   }, []);
 
-  async function load() {
+  // Detects the browser's timezone and saves it as the user's preference if
+  // they haven't set one yet (first login), or reads back whatever's
+  // already stored. This replaces the previous hardcoded Asia/Kolkata,
+  // which silently gave every non-Indian user wrong days.
+  async function resolveTimezone(): Promise<string> {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return DEFAULT_TIMEZONE;
+
+    const { data: existing } = await supabase
+      .from("planner_user_settings")
+      .select("timezone")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (existing?.timezone) {
+      setTz(existing.timezone);
+      return existing.timezone;
+    }
+
+    const detected =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
+    await supabase
+      .from("planner_user_settings")
+      .upsert({ user_id: user.id, timezone: detected });
+    setTz(detected);
+    return detected;
+  }
+
+  async function load(tzOverride?: string) {
+    const effectiveTz = tzOverride ?? tz;
     const [{ data: fixedRows }, { data: flexRows }, { data: personalRows }] =
       await Promise.all([
         supabase.from("planner_fixed_events").select("*"),
@@ -100,9 +131,9 @@ export default function DashboardPage() {
       personal: personalRows ?? [],
     });
 
-    const todayDow = dayOfWeekInAppTZ();
-    const today = todayISOInAppTZ();
-    const currentWeekStart = weekStartISOInAppTZ();
+    const todayDow = dayOfWeekInTZ(effectiveTz);
+    const today = todayISOInTZ(effectiveTz);
+    const currentWeekStart = weekStartISOInTZ(effectiveTz);
 
     // Only fixed events actually happening today: a one-off event_date
     // match, a recurring day_of_week match, or legacy rows with neither
@@ -213,7 +244,7 @@ export default function DashboardPage() {
   async function logPersonalTime(block: ScheduledBlock) {
     const row = rawRowFor(block);
     if (!row) return;
-    const currentWeekStart = weekStartISOInAppTZ();
+    const currentWeekStart = weekStartISOInTZ(tz);
     const sameWeek = row.week_start === currentWeekStart;
     const newLogged = (sameWeek ? row.minutes_logged : 0) + (row.duration_minutes ?? 30);
     await supabase
@@ -333,7 +364,7 @@ export default function DashboardPage() {
                   {b.type === "personal" && row && (
                     <div className="mt-1 text-xs text-slate-500">
                       {Math.min(
-                        row.week_start === weekStartISOInAppTZ()
+                        row.week_start === weekStartISOInTZ(tz)
                           ? row.minutes_logged
                           : 0,
                         row.weekly_quota_minutes ?? 0
@@ -395,7 +426,11 @@ export default function DashboardPage() {
       </button>
 
       {showAdd && (
-        <AddTaskSheet onClose={() => setShowAdd(false)} onSaved={handleSaved} />
+        <AddTaskSheet
+          onClose={() => setShowAdd(false)}
+          onSaved={handleSaved}
+          tz={tz}
+        />
       )}
       {editing && (
         <AddTaskSheet
@@ -403,6 +438,7 @@ export default function DashboardPage() {
           onSaved={handleSaved}
           editingType={editing.type}
           editingRow={editing.row}
+          tz={tz}
         />
       )}
     </main>
@@ -422,23 +458,23 @@ type DraftTask = {
   weekly_quota_minutes: number; // personal only
 };
 
-function defaultDraft(): DraftTask {
+function defaultDraft(tz: string): DraftTask {
   return {
     type: "flex",
     title: "",
     duration_minutes: 60,
-    deadline: todayISO(),
+    deadline: todayISOInTZ(tz),
     start_minutes: 9 * 60,
     end_minutes: 10 * 60,
     recurrence: "weekly",
-    day_of_week: dayOfWeekInAppTZ(),
-    event_date: todayISO(),
+    day_of_week: dayOfWeekInTZ(tz),
+    event_date: todayISOInTZ(tz),
     weekly_quota_minutes: 60,
   };
 }
 
-function draftFromRow(type: TaskKind, row: RawRow): DraftTask {
-  const base = defaultDraft();
+function draftFromRow(tz: string, type: TaskKind, row: RawRow): DraftTask {
+  const base = defaultDraft(tz);
   if (type === "fixed") {
     return {
       ...base,
@@ -514,11 +550,13 @@ function AddTaskSheet({
   onSaved,
   editingType,
   editingRow,
+  tz,
 }: {
   onClose: () => void;
   onSaved: (message?: string) => void;
   editingType?: TaskKind;
   editingRow?: RawRow;
+  tz: string;
 }) {
   const isEditing = !!editingType && !!editingRow;
   const [stage, setStage] = useState<"input" | "review">(
@@ -526,7 +564,7 @@ function AddTaskSheet({
   );
   const [quickText, setQuickText] = useState("");
   const [draft, setDraft] = useState<DraftTask>(
-    isEditing ? draftFromRow(editingType!, editingRow!) : defaultDraft()
+    isEditing ? draftFromRow(tz, editingType!, editingRow!) : defaultDraft(tz)
   );
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -547,7 +585,7 @@ function AddTaskSheet({
         setParsing(false);
         return;
       }
-      const base = defaultDraft();
+      const base = defaultDraft(tz);
       setDraft({
         ...base,
         type: parsed.type ?? "flex",

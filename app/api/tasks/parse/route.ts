@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGroqJSON, todayContext } from "@/lib/groq";
 import { guard } from "@/lib/apiGuard";
+import { getUserTimezone } from "@/lib/userSettings";
 
-const SYSTEM_PROMPT = `You extract a single student task from a short free-text
+function buildSystemPrompt(tz: string): string {
+  return `You extract a single student task from a short free-text
 description and return ONLY a JSON object (no markdown, no prose).
 
-${todayContext()}
+${todayContext(tz)}
 
 Schema:
 {
@@ -50,6 +52,7 @@ Rules:
   event_date instead. If genuinely ambiguous, prefer day_of_week using
   today's day of week.
 - Never include commentary outside the JSON object.`;
+}
 
 // Task descriptions are a sentence or two. Anything longer is either a
 // mistake or someone trying to use our Groq key for their own prompts.
@@ -60,6 +63,7 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const { supabase, user } = auth;
 
   const { text } = await request.json().catch(() => ({ text: null }));
 
@@ -75,7 +79,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const parsed = await callGroqJSON(SYSTEM_PROMPT, text);
+    const tz = await getUserTimezone(supabase, user.id);
+    const parsed = await callGroqJSON(buildSystemPrompt(tz), text);
     return NextResponse.json(parsed);
   } catch (err: any) {
     console.error("Task parse failed:", err);

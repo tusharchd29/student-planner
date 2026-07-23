@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { encryptToken, decryptToken } from "@/lib/tokenCrypto";
 
 // Builds a Google OAuth2 client from the tokens we stored ourselves in
 // planner_google_tokens (Supabase's session.provider_token is dropped on
@@ -35,13 +36,28 @@ export async function getGoogleClientForUser(
     };
   }
 
+  let accessToken: string;
+  let refreshToken: string;
+  try {
+    accessToken = decryptToken(tokenRow.access_token);
+    refreshToken = decryptToken(tokenRow.refresh_token);
+  } catch {
+    // Rows written before encryption was added won't decrypt. Treat it the
+    // same as "no connection" rather than crashing — signing in again
+    // writes a fresh, properly encrypted row.
+    return {
+      error:
+        "Your saved Google connection needs to be refreshed. Please sign out and sign in again.",
+    };
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     process.env.client_id,
     process.env.client_secret
   );
   oauth2Client.setCredentials({
-    access_token: tokenRow.access_token,
-    refresh_token: tokenRow.refresh_token,
+    access_token: accessToken,
+    refresh_token: refreshToken,
   });
 
   try {
@@ -50,7 +66,9 @@ export async function getGoogleClientForUser(
     await supabase
       .from("planner_google_tokens")
       .update({
-        access_token: credentials.access_token,
+        access_token: credentials.access_token
+          ? encryptToken(credentials.access_token)
+          : tokenRow.access_token,
         expires_at: credentials.expiry_date
           ? new Date(credentials.expiry_date).toISOString()
           : null,

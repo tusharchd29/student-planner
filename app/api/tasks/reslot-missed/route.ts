@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { callGroqJSON, todayContext } from "@/lib/groq";
-import { todayISOInAppTZ, addDaysISOInAppTZ } from "@/lib/timezone";
+import { todayISOInTZ, addDaysISOInTZ } from "@/lib/timezone";
 import { guard } from "@/lib/apiGuard";
+import { getUserTimezone } from "@/lib/userSettings";
 
-const SYSTEM_PROMPT = `You are helping re-slot missed student tasks.
+function buildSystemPrompt(tz: string): string {
+  return `You are helping re-slot missed student tasks.
 
-${todayContext()}
+${todayContext(tz)}
 
 You'll be given two lists as JSON:
 - "missed": tasks whose deadline has already passed and aren't done
@@ -25,6 +27,7 @@ Rules:
   same day, especially if "upcoming" already has tasks on a given day.
 - Never move a task's deadline earlier than tomorrow.
 - Keep the summary under 20 words.`;
+}
 
 export async function POST() {
   // Auth only here — the throttle check happens *after* we've confirmed
@@ -36,7 +39,8 @@ export async function POST() {
   }
   const { supabase, user } = auth;
 
-  const today = todayISOInAppTZ();
+  const tz = await getUserTimezone(supabase, user.id);
+  const today = todayISOInTZ(tz);
 
   const [{ data: missed }, { data: upcoming }] = await Promise.all([
     supabase
@@ -51,7 +55,7 @@ export async function POST() {
       .select("id, title, deadline, duration_minutes")
       .eq("done", false)
       .gte("deadline", today)
-      .lte("deadline", addDaysISOInAppTZ(7))
+      .lte("deadline", addDaysISOInTZ(tz, 7))
       .limit(50),
   ]);
 
@@ -75,7 +79,7 @@ export async function POST() {
   let plan: { reslots: { id: string; new_deadline: string }[]; summary: string };
   try {
     plan = await callGroqJSON(
-      SYSTEM_PROMPT,
+      buildSystemPrompt(tz),
       JSON.stringify({ missed, upcoming: upcoming ?? [] })
     );
   } catch (err: any) {
