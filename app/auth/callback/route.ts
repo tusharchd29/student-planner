@@ -5,7 +5,10 @@ import { cookies } from "next/headers";
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   if (code) {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = createRouteHandlerClient(
+      { cookies },
+      { options: { db: { schema: "planner" } } }
+    );
     const { data } = await supabase.auth.exchangeCodeForSession(code);
 
     const session = data?.session;

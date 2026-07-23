@@ -1,8 +1,21 @@
--- Student Planner tables, namespaced with planner_ prefix to coexist
--- safely in a shared Supabase project (Deepak).
+-- Student Planner tables. Originally created in the shared Deepak project's
+-- `public` schema (alongside unrelated Meraki client data and fitness
+-- tracking tables) with a planner_ prefix for namespacing. Later moved into
+-- their own `planner` Postgres schema for real isolation — see the
+-- migration `move_planner_tables_to_own_schema`. This file still creates
+-- them in `public` with the `planner_` prefix for a from-scratch setup;
+-- if recreating against a fresh project, either leave them in `public`
+-- (the prefix alone is enough there) or `create schema planner;` first and
+-- adjust these `create table` statements to `planner.<name>`.
 --
--- NOTE: this reflects the schema actually deployed in the Deepak project.
--- Re-running this against a fresh project will recreate the same shape.
+-- NOTE: this reflects the schema actually deployed in the Deepak project's
+-- `planner` schema. Table names still carry the historical `planner_`
+-- prefix even though the schema name now makes that partly redundant —
+-- not worth a rename given the number of query strings across the app
+-- that would need to change in lockstep.
+--
+-- Requires 'planner' to be added to Project Settings -> Data API ->
+-- Exposed schemas in the Supabase dashboard, or PostgREST won't serve it.
 
 create table if not exists planner_fixed_events (
   id uuid primary key default gen_random_uuid(),

@@ -29,7 +29,10 @@ type RateLimit = {
 export async function guard(
   rateLimit?: RateLimit
 ): Promise<GuardResult> {
-  const supabase = createRouteHandlerClient({ cookies });
+  const supabase = createRouteHandlerClient(
+    { cookies },
+    { options: { db: { schema: "planner" } } }
+  );
 
   const {
     data: { user },
