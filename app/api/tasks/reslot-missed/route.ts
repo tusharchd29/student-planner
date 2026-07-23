@@ -63,7 +63,6 @@ export async function POST() {
   // This route previously fired a Groq call on *every* dashboard load for
   // anyone with an overdue task — slow for the user, expensive for us.
   const { data: allowed } = await supabase.rpc("planner_check_rate_limit", {
-    p_user_id: user.id,
     p_bucket: "reslot",
     p_limit: 1,
     p_window: "1 day",

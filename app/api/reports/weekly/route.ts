@@ -58,7 +58,6 @@ export async function POST(request: NextRequest) {
 
   // Generating is the expensive path — limit it. Cached reads above are free.
   const { data: allowed } = await supabase.rpc("planner_check_rate_limit", {
-    p_user_id: user.id,
     p_bucket: "report",
     p_limit: 10,
     p_window: "1 day",

@@ -40,10 +40,12 @@ export async function guard(
   }
 
   if (rateLimit) {
+    // Note: no user id is passed — the function derives it from auth.uid()
+    // internally. An earlier version took it as an argument, which let any
+    // signed-in user exhaust someone else's limit by passing their id.
     const { data: allowed, error } = await supabase.rpc(
       "planner_check_rate_limit",
       {
-        p_user_id: user.id,
         p_bucket: rateLimit.bucket,
         p_limit: rateLimit.limit,
         p_window: rateLimit.window,
