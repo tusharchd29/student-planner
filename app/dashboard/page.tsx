@@ -68,7 +68,11 @@ export default function DashboardPage() {
       } else {
         setSyncMessage(
           `Synced ${data.synced} event${data.synced === 1 ? "" : "s"}${
-            data.failed ? ` (${data.failed} failed)` : ""
+            data.failed
+              ? ` (${data.failed} failed${
+                  data.firstError ? `: ${data.firstError}` : ""
+                })`
+              : ""
           }.`
         );
       }

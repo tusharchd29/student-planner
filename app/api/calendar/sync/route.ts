@@ -104,6 +104,8 @@ export async function POST() {
 
   const calendar = google.calendar({ version: "v3", auth: oauth2Client });
   const today = new Date().toISOString().slice(0, 10);
+  // TODO: make this a user preference; hardcoded for now.
+  const timeZone = "Asia/Kolkata";
 
   const results = await Promise.allSettled(
     blocks.map((b) =>
@@ -111,8 +113,8 @@ export async function POST() {
         calendarId: "primary",
         requestBody: {
           summary: b.title,
-          start: { dateTime: `${today}T${b.start}:00` },
-          end: { dateTime: `${today}T${b.end}:00` },
+          start: { dateTime: `${today}T${b.start}:00`, timeZone },
+          end: { dateTime: `${today}T${b.end}:00`, timeZone },
           reminders: {
             useDefault: false,
             overrides: [{ method: "popup", minutes: 10 }],
@@ -130,8 +132,12 @@ export async function POST() {
     );
   }
 
+  const firstError =
+    failed.length > 0 ? (failed[0] as any).reason?.message : undefined;
+
   return NextResponse.json({
     synced: results.length - failed.length,
     failed: failed.length,
+    firstError,
   });
 }
