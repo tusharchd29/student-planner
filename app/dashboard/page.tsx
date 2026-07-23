@@ -115,28 +115,56 @@ function AddTaskSheet({
   const [kind, setKind] = useState<"fixed" | "flex" | "personal">("flex");
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function save() {
     setSaving(true);
+    setError(null);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setError("Not signed in — please log in again.");
+      setSaving(false);
+      return;
+    }
+
+    let insertError = null;
     if (kind === "fixed") {
-      const { error } = await supabase
-        .from("planner_fixed_events")
-        .insert({ title, start_minutes: 9 * 60, end_minutes: 10 * 60 });
-      if (error) console.error(error);
+      const { error } = await supabase.from("planner_fixed_events").insert({
+        user_id: user.id,
+        title,
+        start_minutes: 9 * 60,
+        end_minutes: 10 * 60,
+      });
+      insertError = error;
     } else if (kind === "flex") {
       const { error } = await supabase.from("planner_flex_tasks").insert({
+        user_id: user.id,
         title,
         duration_minutes: 60,
         deadline: new Date().toISOString().slice(0, 10),
       });
-      if (error) console.error(error);
+      insertError = error;
     } else {
-      const { error } = await supabase
-        .from("planner_personal_tasks")
-        .insert({ title, duration_minutes: 60, weekly_quota_minutes: 60 });
-      if (error) console.error(error);
+      const { error } = await supabase.from("planner_personal_tasks").insert({
+        user_id: user.id,
+        title,
+        duration_minutes: 60,
+        weekly_quota_minutes: 60,
+      });
+      insertError = error;
     }
+
     setSaving(false);
+
+    if (insertError) {
+      console.error(insertError);
+      setError(insertError.message);
+      return;
+    }
+
     onSaved();
     onClose();
   }
@@ -166,6 +194,9 @@ function AddTaskSheet({
           placeholder="Title"
           className="mb-4 w-full rounded-lg border p-2"
         />
+        {error && (
+          <p className="mb-4 text-sm text-red-600">Couldn&apos;t save: {error}</p>
+        )}
         <div className="flex gap-2">
           <button
             onClick={onClose}
