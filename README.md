@@ -50,6 +50,7 @@ include the production domain.
 
 ## Roadmap
 
-- Phase 3: Groq-powered natural-language task entry
-- Phase 4: missed-task prevention + adaptive reminders
+- ~~Phase 3: Groq-powered natural-language task entry~~ ✅ done — "Quick add"
+  in the Add Task sheet, plus automatic missed-task re-slotting on load
+- Phase 4: adaptive reminders, streaks/nudges
 - Phase 5: Groq-generated weekly narrative report
