@@ -28,8 +28,21 @@ create table if not exists planner_flex_tasks (
   duration_minutes int not null default 60,
   deadline date not null,
   done boolean not null default false,
+  -- When the task was actually marked done — powers the weekly report's
+  -- "what you completed this week".
+  completed_at timestamptz,
   google_event_id text,
   created_at timestamptz not null default now()
+);
+
+-- One cached Groq-generated narrative report per user per week.
+create table if not exists planner_weekly_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users not null default auth.uid(),
+  week_start date not null,
+  content text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, week_start)
 );
 
 create table if not exists planner_personal_tasks (
@@ -54,6 +67,12 @@ create table if not exists planner_personal_tasks (
 alter table planner_fixed_events enable row level security;
 alter table planner_flex_tasks enable row level security;
 alter table planner_personal_tasks enable row level security;
+alter table planner_weekly_reports enable row level security;
+
+create policy "Users manage their own weekly reports"
+  on planner_weekly_reports for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 create policy "Users manage their own fixed events"
   on planner_fixed_events for all

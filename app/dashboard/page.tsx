@@ -50,6 +50,30 @@ export default function DashboardPage() {
   const [reslotMessage, setReslotMessage] = useState<string | null>(null);
   const [streakMessage, setStreakMessage] = useState<string | null>(null);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
+  const [report, setReport] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  async function fetchWeeklyReport(force = false) {
+    setReportLoading(true);
+    setReportError(null);
+    try {
+      const res = await fetch("/api/reports/weekly", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReportError(data.error ?? "Couldn't generate the report.");
+      } else {
+        setReport(data.report);
+      }
+    } catch {
+      setReportError("Network error while generating the report.");
+    }
+    setReportLoading(false);
+  }
 
   async function handleSaved(message?: string) {
     if (message) setAddedMessage(message);
@@ -180,7 +204,9 @@ export default function DashboardPage() {
   async function markDone(block: ScheduledBlock) {
     if (block.type === "fixed") return; // fixed events have no "done" concept
     const table = TABLE_BY_TYPE[block.type];
-    await supabase.from(table).update({ done: true }).eq("id", block.sourceId);
+    const update: Record<string, any> = { done: true };
+    if (block.type === "flex") update.completed_at = new Date().toISOString();
+    await supabase.from(table).update(update).eq("id", block.sourceId);
     load();
   }
 
@@ -224,14 +250,53 @@ export default function DashboardPage() {
     <main className="mx-auto max-w-lg px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Today</h1>
-        <button
-          onClick={syncToCalendar}
-          disabled={syncing}
-          className="rounded-full border border-indigo-600 px-4 py-1 text-sm text-indigo-600 disabled:opacity-50"
-        >
-          {syncing ? "Syncing…" : "Sync to Google Calendar"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => fetchWeeklyReport(false)}
+            disabled={reportLoading}
+            className="rounded-full border border-slate-400 px-3 py-1 text-sm text-slate-600 disabled:opacity-50"
+          >
+            {reportLoading ? "Writing…" : "Weekly report"}
+          </button>
+          <button
+            onClick={syncToCalendar}
+            disabled={syncing}
+            className="rounded-full border border-indigo-600 px-4 py-1 text-sm text-indigo-600 disabled:opacity-50"
+          >
+            {syncing ? "Syncing…" : "Sync to Google Calendar"}
+          </button>
+        </div>
       </div>
+      {reportError && (
+        <p className="mb-2 rounded-lg bg-red-50 p-2 text-sm text-red-600">
+          {reportError}
+        </p>
+      )}
+      {report && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">
+              Your week in review
+            </h2>
+            <div className="flex gap-3">
+              <button
+                onClick={() => fetchWeeklyReport(true)}
+                disabled={reportLoading}
+                className="text-xs text-indigo-600 disabled:opacity-50"
+              >
+                Regenerate
+              </button>
+              <button
+                onClick={() => setReport(null)}
+                className="text-xs text-slate-400"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <p className="text-sm leading-relaxed text-slate-700">{report}</p>
+        </div>
+      )}
       {reslotMessage && (
         <p className="mb-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-700">
           {reslotMessage}

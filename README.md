@@ -55,4 +55,13 @@ include the production domain.
 - ~~Phase 4: adaptive reminders + streaks~~ ✅ done — calendar reminder lead
   time now scales with task urgency/duration instead of a flat 10 minutes,
   and personal tasks track a weekly-quota streak (current + longest)
-- Phase 5: Groq-generated weekly narrative report
+- ~~Phase 5: Groq-generated weekly narrative report~~ ✅ done — "Weekly
+  report" button generates a friendly narrative review (completed work,
+  overdue items, protected downtime, streaks, and a suggestion for the
+  coming week), cached per week with a regenerate option
+
+All originally planned phases are complete. Known remaining gaps (from the
+code audit): per-user timezone preference (currently hardcoded to
+Asia/Kolkata), a week-ahead view beyond "Today", configurable day
+start/end for the scheduler, rate limiting on Groq-backed routes, and
+automated tests.
