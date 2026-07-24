@@ -5,3 +5,137 @@
 html, body {
   height: 100%;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   "Organic" design system — used by the marketing landing page only.
+   Scoped under .organic so it never affects the dashboard/login/legal
+   pages, which keep their existing Tailwind slate look.
+   ══════════════════════════════════════════════════════════════════════ */
+.organic {
+  --color-bg: #f5ead8;
+  --color-surface: #ebddc5;
+  --color-text: #201e1d;
+  --color-accent: #c67139;
+  --color-accent-2: #7a8a5e;
+  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+
+  --color-neutral-100: #f9f4ed;
+  --color-neutral-200: #eee7db;
+  --color-neutral-300: #dcd3c4;
+  --color-neutral-400: #c0b6a5;
+  --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-neutral-800: #474238;
+  --color-neutral-900: #2e2b25;
+
+  --color-accent-100: #fff2eb;
+  --color-accent-200: #ffe1d0;
+  --color-accent-300: #ffc6a5;
+  --color-accent-400: #f6a06b;
+  --color-accent-500: #d67f48;
+  --color-accent-600: #b2622d;
+  --color-accent-700: #8c491a;
+  --color-accent-800: #643312;
+  --color-accent-900: #402310;
+
+  --color-accent-2-100: #f0fae1;
+  --color-accent-2-200: #e1eecc;
+  --color-accent-2-300: #ccdbb2;
+  --color-accent-2-400: #aebf92;
+  --color-accent-2-500: #8fa073;
+  --color-accent-2-600: #728157;
+  --color-accent-2-700: #56633f;
+  --color-accent-2-800: #3d472b;
+  --color-accent-2-900: #272e1b;
+
+  --font-heading: var(--font-caprasimo), system-ui, sans-serif;
+  --font-body: var(--font-figtree), system-ui, sans-serif;
+
+  --space-1: 4.4px;
+  --space-2: 8.8px;
+  --space-3: 13.2px;
+  --space-4: 17.6px;
+  --space-6: 26.4px;
+  --space-8: 35.2px;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.organic h1, .organic h2, .organic h3, .organic h4, .organic h5, .organic h6 {
+  font-family: var(--font-heading);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin: 0 0 var(--space-2);
+}
+.organic h1 { font-size: 42px; }
+.organic h2 { font-size: 32px; }
+.organic h3 { font-size: 25px; }
+.organic h4 { font-size: 20px; }
+.organic h5 { font-size: 16px; }
+.organic h6 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+.organic p { margin: 0 0 var(--space-3); }
+.organic a { color: var(--color-accent); text-underline-offset: 3px; }
+.organic .text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.organic :focus { outline: none; }
+.organic :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.organic ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+/* — buttons — */
+.organic .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  cursor: pointer; text-decoration: none;
+  font-family: var(--font-heading); font-weight: 400;
+  font-size: 14px; line-height: 1.2; color: var(--color-text);
+  background: transparent; border: 1px solid transparent;
+  padding: var(--space-2) calc(var(--space-3) * 1.2);
+  border-radius: 999px;
+  transition: background-color 150ms ease;
+}
+.organic .btn svg { display: block; }
+.organic .btn-primary { background: var(--color-accent); color: var(--color-bg); }
+.organic .btn-primary:hover { background: var(--color-accent-600); }
+.organic .btn-primary:active { background: var(--color-accent-700); }
+
+/* — cards — */
+.organic .card {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3); border-radius: calc(var(--radius-lg) * 1.15);
+  background: var(--color-surface);
+}
+.organic .elev-sm { box-shadow: var(--shadow-sm); }
+.organic .elev-md { box-shadow: var(--shadow-md); }
+.organic .elev-lg { box-shadow: var(--shadow-lg); }
+
+/* — tags — */
+.organic .tag {
+  display: inline-flex; align-items: center; font-size: 11px;
+  letter-spacing: 0.02em; padding: 3px 10px;
+  border-radius: 999px;
+}
+.organic .tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+
+/* — nav — */
+.organic .nav {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+.organic .nav-brand {
+  font-family: var(--font-heading); font-weight: 400;
+  font-size: 18px; margin-right: auto;
+}
+.organic .nav a { color: inherit; text-decoration: none; font-size: 14px; }
+.organic .nav a:hover { color: var(--color-accent); }
