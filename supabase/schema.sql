@@ -119,3 +119,36 @@ create policy "Users manage their own personal tasks"
   on planner_personal_tasks for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Daily reports (mirrors planner_weekly_reports, but per-day). Added for
+-- the "daily recap" feature — see /api/reports/daily.
+create table if not exists planner_daily_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users not null default auth.uid(),
+  report_date date not null,
+  content text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, report_date)
+);
+alter table planner_daily_reports enable row level security;
+create policy "Users manage their own daily reports"
+  on planner_daily_reports for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Gamification: XP, level, and a daily "did you do anything today" streak.
+-- Separate from planner_personal_tasks' own weekly-quota streak columns.
+create table if not exists planner_user_stats (
+  user_id uuid primary key references auth.users default auth.uid(),
+  xp int not null default 0,
+  level int not null default 1,
+  current_daily_streak int not null default 0,
+  longest_daily_streak int not null default 0,
+  last_active_date date,
+  updated_at timestamptz not null default now()
+);
+alter table planner_user_stats enable row level security;
+create policy "Users manage their own stats"
+  on planner_user_stats for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

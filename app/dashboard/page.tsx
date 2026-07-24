@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import confetti from "canvas-confetti";
 import { supabase } from "@/lib/supabaseClient";
 import {
   scheduleDay,
@@ -18,6 +19,7 @@ import {
   DEFAULT_TIMEZONE,
 } from "@/lib/timezone";
 import type { RawRow } from "@/lib/types";
+import { recordCompletion, xpForDuration, levelForXP } from "@/lib/gamify";
 import { AddTaskSheet } from "@/components/dashboard/AddTaskSheet";
 import { AccountSheet } from "@/components/dashboard/AccountSheet";
 import { TaskListItem } from "@/components/dashboard/TaskListItem";
@@ -31,6 +33,28 @@ function RefreshCwIcon() {
       <path d="M21 20v-5h-5" />
     </svg>
   );
+}
+
+function ShareIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
+      <line x1="15.4" y1="6.5" x2="8.6" y2="10.5" />
+    </svg>
+  );
+}
+
+function burstConfetti() {
+  confetti({
+    particleCount: 60,
+    spread: 65,
+    origin: { y: 0.7 },
+    colors: ["#c67139", "#7a8a5e", "#f5ead8"],
+    disableForReducedMotion: true,
+  });
 }
 
 export default function DashboardPage() {
@@ -56,6 +80,18 @@ export default function DashboardPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [showAccount, setShowAccount] = useState(false);
 
+  // Daily recap — auto-fetched (cached) on load, plus a manual button.
+  const [dailyRecap, setDailyRecap] = useState<string | null>(null);
+  const [dailyRecapLoading, setDailyRecapLoading] = useState(false);
+  const [dailyRecapError, setDailyRecapError] = useState<string | null>(null);
+
+  // Gamification — XP/level/streak, kept in local state so the header
+  // updates instantly on completion instead of waiting on a refetch.
+  const [xp, setXp] = useState(0);
+  const [levelTitle, setLevelTitle] = useState("Getting Started");
+  const [dailyStreak, setDailyStreak] = useState(0);
+  const [levelUpToast, setLevelUpToast] = useState<string | null>(null);
+
   async function fetchWeeklyReport(force = false) {
     setReportLoading(true);
     setReportError(null);
@@ -77,6 +113,44 @@ export default function DashboardPage() {
     setReportLoading(false);
   }
 
+  async function fetchDailyRecap(force = false) {
+    setDailyRecapLoading(true);
+    setDailyRecapError(null);
+    try {
+      const res = await fetch("/api/reports/daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDailyRecapError(data.error ?? "Couldn't generate today's recap.");
+      } else {
+        setDailyRecap(data.report);
+      }
+    } catch {
+      setDailyRecapError("Network error while generating the recap.");
+    }
+    setDailyRecapLoading(false);
+  }
+
+  async function loadStats() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("planner_user_stats")
+      .select("xp, level, current_daily_streak")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (data) {
+      setXp(data.xp);
+      setLevelTitle(levelForXP(data.xp).title);
+      setDailyStreak(data.current_daily_streak);
+    }
+  }
+
   async function handleSaved(message?: string) {
     if (message) setAddedMessage(message);
     load();
@@ -88,12 +162,12 @@ export default function DashboardPage() {
     });
     checkMissedTasks();
     rollWeek();
+    loadStats();
+    // Auto-ready by the time you open the app — silently cached after the
+    // first generation each day, so this is free on every load after that.
+    fetchDailyRecap(false);
   }, []);
 
-  // Detects the browser's timezone and saves it as the user's preference if
-  // they haven't set one yet (first login), or reads back whatever's
-  // already stored. This replaces the previous hardcoded Asia/Kolkata,
-  // which silently gave every non-Indian user wrong days.
   async function resolveTimezone(): Promise<string> {
     const {
       data: { user },
@@ -139,9 +213,6 @@ export default function DashboardPage() {
     const today = todayISOInTZ(effectiveTz);
     const currentWeekStart = weekStartISOInTZ(effectiveTz);
 
-    // Only fixed events actually happening today: a one-off event_date
-    // match, a recurring day_of_week match, or legacy rows with neither
-    // set (treated as every day).
     const todaysFixed = (fixedRows ?? []).filter(
       (r: any) =>
         r.event_date === today ||
@@ -236,12 +307,33 @@ export default function DashboardPage() {
     return rawRows[block.type].find((r) => r.id === block.sourceId);
   }
 
+  async function awardXP(minutes: number) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const result = await recordCompletion(supabase, user.id, tz, xpForDuration(minutes));
+    setXp(result.xp);
+    setDailyStreak(result.currentStreak);
+    const { title } = levelForXP(result.xp);
+    setLevelTitle(title);
+    burstConfetti();
+    if (result.leveledUp) {
+      setLevelUpToast(`Level up — you're ${title} now 🎉`);
+      setTimeout(() => setLevelUpToast(null), 4000);
+    }
+  }
+
   async function markDone(block: ScheduledBlock) {
     if (block.type === "fixed") return; // fixed events have no "done" concept
     const table = TABLE_BY_TYPE[block.type];
     const update: Record<string, any> = { done: true };
     if (block.type === "flex") update.completed_at = new Date().toISOString();
     await supabase.from(table).update(update).eq("id", block.sourceId);
+    if (block.type === "flex") {
+      const row = rawRowFor(block);
+      awardXP(row?.duration_minutes ?? 30);
+    }
     load();
   }
 
@@ -258,6 +350,7 @@ export default function DashboardPage() {
         minutes_logged: Math.min(newLogged, row.weekly_quota_minutes ?? newLogged),
       })
       .eq("id", block.sourceId);
+    awardXP(row.duration_minutes ?? 30);
     load();
   }
 
@@ -283,7 +376,16 @@ export default function DashboardPage() {
 
   return (
     <main className="organic mx-auto min-h-screen max-w-lg px-[17.6px] py-[26.4px] pb-[100px]">
-      <div className="mb-[17.6px] flex flex-wrap items-center justify-between gap-[8.8px]">
+      {levelUpToast && (
+        <div
+          className="fixed left-1/2 top-[17.6px] z-50 -translate-x-1/2 rounded-full px-[17.6px] py-[8.8px] text-[13px] font-semibold"
+          style={{ background: "var(--color-accent)", color: "var(--color-bg)", boxShadow: "var(--shadow-lg)" }}
+        >
+          {levelUpToast}
+        </div>
+      )}
+
+      <div className="mb-[13.2px] flex flex-wrap items-center justify-between gap-[8.8px]">
         <h2 className="m-0">Today</h2>
         <div className="flex flex-wrap gap-[6px]">
           <button
@@ -312,6 +414,55 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* XP / level / streak strip */}
+      <div className="card elev-sm mb-[13.2px] flex-row items-center justify-between" style={{ padding: "10px 14px" }}>
+        <div>
+          <div className="text-[13px] font-semibold">{levelTitle}</div>
+          <div className="text-muted text-[11px]">{xp} XP</div>
+        </div>
+        <div className="flex items-center gap-[13.2px]">
+          {dailyStreak > 0 && (
+            <span className="tag tag-accent-2">🔥 {dailyStreak}-day streak</span>
+          )}
+          <a
+            href="/api/recap/image?period=day"
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-secondary"
+            style={{ padding: "4px 10px", fontSize: "12px" }}
+            title="Get a shareable recap card"
+          >
+            <ShareIcon />
+            Recap
+          </a>
+        </div>
+      </div>
+
+      {/* Daily recap — auto-populated, silent if not ready yet */}
+      {dailyRecap && (
+        <div className="card elev-sm mb-[13.2px]" style={{ padding: "13.2px" }}>
+          <div className="mb-[4px] flex items-center justify-between">
+            <span className="text-[11px] uppercase" style={{ letterSpacing: "0.06em", opacity: 0.55 }}>
+              Today's recap
+            </span>
+            <button
+              onClick={() => fetchDailyRecap(true)}
+              disabled={dailyRecapLoading}
+              className="btn-ghost text-[11px]"
+              style={{ background: "none", padding: 0 }}
+            >
+              {dailyRecapLoading ? "…" : "Refresh"}
+            </button>
+          </div>
+          <p className="m-0 text-[14px]" style={{ lineHeight: 1.5 }}>
+            {dailyRecap}
+          </p>
+        </div>
+      )}
+      {dailyRecapError && (
+        <p className="banner banner-error mb-[8.8px]">{dailyRecapError}</p>
+      )}
 
       {reportError && (
         <p className="banner banner-error mb-[8.8px]">{reportError}</p>
@@ -371,7 +522,7 @@ export default function DashboardPage() {
         ))}
         {blocks.length === 0 && (
           <p className="text-muted text-[14px]">
-            Nothing scheduled yet — add a task to get started.
+            Nothing on deck yet — add something 👀
           </p>
         )}
       </ol>
