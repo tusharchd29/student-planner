@@ -22,6 +22,17 @@ import { AddTaskSheet } from "@/components/dashboard/AddTaskSheet";
 import { AccountSheet } from "@/components/dashboard/AccountSheet";
 import { TaskListItem } from "@/components/dashboard/TaskListItem";
 
+function RefreshCwIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 8a9 9 0 0 0-15-6.7L3 4" />
+      <path d="M3 4v5h5" />
+      <path d="M3 16a9 9 0 0 0 15 6.7l3-2.7" />
+      <path d="M21 20v-5h-5" />
+    </svg>
+  );
+}
+
 export default function DashboardPage() {
   const [blocks, setBlocks] = useState<ScheduledBlock[]>([]);
   const [tz, setTz] = useState(DEFAULT_TIMEZONE);
@@ -271,82 +282,81 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-lg px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Today</h1>
-        <div className="flex gap-2">
+    <main className="organic mx-auto min-h-screen max-w-lg px-[17.6px] py-[26.4px] pb-[100px]">
+      <div className="mb-[17.6px] flex flex-wrap items-center justify-between gap-[8.8px]">
+        <h2 className="m-0">Today</h2>
+        <div className="flex flex-wrap gap-[6px]">
           <button
             onClick={() => setShowAccount(true)}
-            className="rounded-full border border-slate-300 px-3 py-1 text-sm text-slate-500"
+            className="btn btn-secondary"
+            style={{ padding: "4px 12px", fontSize: "13px" }}
           >
             Account
           </button>
           <button
             onClick={() => fetchWeeklyReport(false)}
             disabled={reportLoading}
-            className="rounded-full border border-slate-400 px-3 py-1 text-sm text-slate-600 disabled:opacity-50"
+            className="btn btn-secondary"
+            style={{ padding: "4px 12px", fontSize: "13px" }}
           >
             {reportLoading ? "Writing…" : "Weekly report"}
           </button>
           <button
             onClick={syncToCalendar}
             disabled={syncing}
-            className="rounded-full border border-indigo-600 px-4 py-1 text-sm text-indigo-600 disabled:opacity-50"
+            className="btn btn-primary"
+            style={{ padding: "4px 14px", fontSize: "13px" }}
           >
+            <RefreshCwIcon />
             {syncing ? "Syncing…" : "Sync to Google Calendar"}
           </button>
         </div>
       </div>
+
       {reportError && (
-        <p className="mb-2 rounded-lg bg-red-50 p-2 text-sm text-red-600">
-          {reportError}
-        </p>
+        <p className="banner banner-error mb-[8.8px]">{reportError}</p>
       )}
       {report && (
-        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">
-              Your week in review
-            </h2>
-            <div className="flex gap-3">
+        <div className="card elev-sm mb-[13.2px]" style={{ padding: "17.6px" }}>
+          <div className="mb-[8.8px] flex items-center justify-between">
+            <h5 className="m-0">Your week in review</h5>
+            <div className="flex gap-[13.2px]">
               <button
                 onClick={() => fetchWeeklyReport(true)}
                 disabled={reportLoading}
-                className="text-xs text-indigo-600 disabled:opacity-50"
+                className="btn-ghost text-[12px]"
+                style={{ background: "none", padding: 0 }}
               >
                 Regenerate
               </button>
               <button
                 onClick={() => setReport(null)}
-                className="text-xs text-slate-400"
+                className="text-muted text-[12px]"
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
               >
                 Close
               </button>
             </div>
           </div>
-          <p className="text-sm leading-relaxed text-slate-700">{report}</p>
+          <p className="m-0 text-[14px]" style={{ lineHeight: 1.6 }}>
+            {report}
+          </p>
         </div>
       )}
       {reslotMessage && (
-        <p className="mb-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-700">
-          {reslotMessage}
-        </p>
+        <p className="banner banner-warn mb-[8.8px]">{reslotMessage}</p>
       )}
       {streakMessage && (
-        <p className="mb-2 rounded-lg bg-orange-50 p-2 text-sm text-orange-700">
-          {streakMessage}
-        </p>
+        <p className="banner banner-warn mb-[8.8px]">{streakMessage}</p>
       )}
       {addedMessage && (
-        <p className="mb-2 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-700">
-          {addedMessage}
-        </p>
+        <p className="banner banner-success mb-[8.8px]">{addedMessage}</p>
       )}
       {syncMessage && (
-        <p className="mb-4 text-sm text-slate-600">{syncMessage}</p>
+        <p className="text-muted mb-[13.2px] text-[13px]">{syncMessage}</p>
       )}
 
-      <ol className="space-y-3">
+      <ol className="flex flex-col gap-[8.8px]" style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {blocks.map((b) => (
           <TaskListItem
             key={`${b.sourceId}-${b.start}`}
@@ -360,7 +370,7 @@ export default function DashboardPage() {
           />
         ))}
         {blocks.length === 0 && (
-          <p className="text-sm text-slate-400">
+          <p className="text-muted text-[14px]">
             Nothing scheduled yet — add a task to get started.
           </p>
         )}
@@ -368,7 +378,16 @@ export default function DashboardPage() {
 
       <button
         onClick={() => setShowAdd(true)}
-        className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-indigo-600 text-2xl text-white shadow-lg"
+        aria-label="Add task"
+        className="fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full text-[28px]"
+        style={{
+          background: "var(--color-accent)",
+          color: "var(--color-bg)",
+          boxShadow: "var(--shadow-lg)",
+          border: "none",
+          cursor: "pointer",
+          lineHeight: 1,
+        }}
       >
         +
       </button>

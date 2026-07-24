@@ -4,10 +4,22 @@ import type { ScheduledBlock } from "@/lib/scheduler";
 import { weekStartISOInTZ } from "@/lib/timezone";
 import type { RawRow } from "@/lib/types";
 
-const typeStyles: Record<ScheduledBlock["type"], string> = {
-  fixed: "bg-fixed/10 border-fixed text-fixed",
-  flex: "bg-flex/10 border-flex text-flex",
-  personal: "bg-personal/10 border-personal text-personal",
+const blockClass: Record<ScheduledBlock["type"], string> = {
+  fixed: "block-fixed",
+  flex: "block-flex",
+  personal: "block-personal",
+};
+
+const pillClass: Record<ScheduledBlock["type"], string> = {
+  fixed: "pill-fixed",
+  flex: "pill-flex",
+  personal: "pill-personal",
+};
+
+const pillLabel: Record<ScheduledBlock["type"], string> = {
+  fixed: "Class",
+  flex: "Task",
+  personal: "Personal",
 };
 
 export function TaskListItem({
@@ -28,36 +40,48 @@ export function TaskListItem({
   onDelete: (block: ScheduledBlock) => void;
 }) {
   return (
-    <li className={`rounded-xl border-l-4 p-3 ${typeStyles[block.type]}`}>
-      <div className="flex items-start justify-between gap-2">
+    <li
+      className={`card elev-sm ${blockClass[block.type]}`}
+      style={{ padding: "13.2px" }}
+    >
+      <div className="flex items-start justify-between gap-[8.8px]">
         <div className="min-w-0 flex-1">
-          <div className="text-xs opacity-70">
-            {block.start} – {block.end}
+          <div className="mb-[2px] flex items-center gap-[8px]">
+            <span className="text-[12px]" style={{ opacity: 0.6 }}>
+              {block.start} – {block.end}
+            </span>
+            <span className={`tag ${pillClass[block.type]}`}>
+              {pillLabel[block.type]}
+            </span>
           </div>
-          <div className="font-medium text-slate-800">{block.title}</div>
+          <div className="text-[15px] font-semibold">{block.title}</div>
           {block.type === "personal" && row && (
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-[4px] text-[12px]" style={{ opacity: 0.65 }}>
               {Math.min(
                 row.week_start === weekStartISOInTZ(tz) ? row.minutes_logged : 0,
                 row.weekly_quota_minutes ?? 0
               )}
               /{row.weekly_quota_minutes ?? 0} min this week
               {row.current_streak > 0 && (
-                <span className="ml-2 text-orange-600">
+                <span
+                  className="ml-[8px]"
+                  style={{ color: "var(--color-accent-700)" }}
+                >
                   🔥 {row.current_streak}wk
                 </span>
               )}
             </div>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-[6px]">
           {block.type !== "fixed" && (
             <button
               onClick={() =>
                 block.type === "personal" ? onLogTime(block) : onMarkDone(block)
               }
               title={block.type === "personal" ? "Log time" : "Mark done"}
-              className="rounded-full border px-2 py-1 text-xs text-slate-600 hover:bg-white"
+              className="btn btn-secondary"
+              style={{ padding: "4px 10px", fontSize: "12px" }}
             >
               {block.type === "personal" ? "Log" : "Done"}
             </button>
@@ -65,14 +89,16 @@ export function TaskListItem({
           <button
             onClick={() => row && onEdit(block, row)}
             title="Edit"
-            className="rounded-full border px-2 py-1 text-xs text-slate-600 hover:bg-white"
+            className="btn btn-secondary"
+            style={{ padding: "4px 10px", fontSize: "12px" }}
           >
             Edit
           </button>
           <button
             onClick={() => onDelete(block)}
             title="Delete"
-            className="rounded-full border px-2 py-1 text-xs text-red-500 hover:bg-white"
+            className="btn btn-danger"
+            style={{ padding: "4px 10px", fontSize: "12px" }}
           >
             Del
           </button>

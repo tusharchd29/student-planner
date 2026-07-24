@@ -1,6 +1,28 @@
 "use client";
 
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+
+function GoogleIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ flex: "none" }}
+    >
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <polyline points="10 17 15 12 10 7" />
+      <line x1="15" y1="12" x2="3" y2="12" />
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const handleGoogleLogin = async () => {
@@ -18,16 +40,23 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6">
-      <h1 className="text-2xl font-semibold">Student Planner</h1>
-      <p className="max-w-sm text-center text-sm text-slate-500">
+    <main className="organic flex min-h-screen flex-col items-center justify-center gap-[13.2px] px-6">
+      <Link href="/" className="nav-brand mb-[8.8px]">
+        Student Planner
+      </Link>
+      <p
+        className="max-w-sm text-center text-[15px]"
+        style={{ opacity: 0.75 }}
+      >
         Sign in with Google to sync your auto-generated schedule to your
         calendar.
       </p>
       <button
         onClick={handleGoogleLogin}
-        className="rounded-full bg-indigo-600 px-6 py-2 text-white shadow hover:bg-indigo-700"
+        className="btn btn-primary"
+        style={{ padding: "13.2px 26.4px", fontSize: "16px" }}
       >
+        <GoogleIcon />
         Continue with Google
       </button>
     </main>

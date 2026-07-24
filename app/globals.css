@@ -109,6 +109,58 @@ html, body {
 .organic .btn-primary { background: var(--color-accent); color: var(--color-bg); }
 .organic .btn-primary:hover { background: var(--color-accent-600); }
 .organic .btn-primary:active { background: var(--color-accent-700); }
+.organic .btn-secondary { border-color: var(--color-divider); color: var(--color-text); }
+.organic .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.organic .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.organic .btn-ghost { color: var(--color-accent); }
+.organic .btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.organic .btn-danger { color: var(--color-accent-900); border-color: color-mix(in srgb, #b3261e 35%, transparent); }
+.organic .btn-danger-solid { background: #b3261e; color: #fff5f3; }
+.organic .btn-danger-solid:hover { background: #93201a; }
+.organic .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* — forms — */
+.organic .field-label {
+  display: block; font-size: 12px; margin-bottom: 5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+.organic .input {
+  width: 100%; min-height: 40px; padding: 8px 14px; font: inherit;
+  font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.organic .input::placeholder { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
+.organic .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.organic .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+.organic textarea.input { min-height: 90px; resize: vertical; border-radius: var(--radius-md); }
+
+/* — segmented pill toggles (task type, weekday, recurrence) — */
+.organic .seg-opt {
+  border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+  background: var(--color-bg); color: var(--color-text);
+  border: 1px solid var(--color-divider);
+}
+.organic .seg-opt[data-active="true"] {
+  background: var(--color-accent); color: var(--color-bg); border-color: var(--color-accent);
+}
+.organic .seg-opt:hover:not([data-active="true"]) { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+
+/* — bottom sheets / dialogs — */
+.organic .sheet-backdrop {
+  position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center;
+  background: color-mix(in srgb, var(--color-neutral-900) 45%, transparent);
+  z-index: 50;
+}
+.organic .sheet {
+  width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
+  background: var(--color-bg); padding: var(--space-6);
+  border-radius: 28px 28px 0 0;
+  box-shadow: var(--shadow-lg);
+}
+@media (min-width: 640px) {
+  .organic .sheet { margin-bottom: var(--space-6); border-radius: 28px; }
+}
 
 /* — cards — */
 .organic .card {
@@ -120,6 +172,14 @@ html, body {
 .organic .elev-md { box-shadow: var(--shadow-md); }
 .organic .elev-lg { box-shadow: var(--shadow-lg); }
 
+/* — block-type accents (fixed = neutral/class, flex = terracotta/task, personal = sage) — */
+.organic .block-fixed { border-left: 4px solid var(--color-neutral-500); }
+.organic .block-flex { border-left: 4px solid var(--color-accent); }
+.organic .block-personal { border-left: 4px solid var(--color-accent-2); }
+.organic .pill-fixed { background: var(--color-neutral-200); color: var(--color-neutral-700); }
+.organic .pill-flex { background: var(--color-accent-100); color: var(--color-accent-700); }
+.organic .pill-personal { background: var(--color-accent-2-100); color: var(--color-accent-2-700); }
+
 /* — tags — */
 .organic .tag {
   display: inline-flex; align-items: center; font-size: 11px;
@@ -127,6 +187,12 @@ html, body {
   border-radius: 999px;
 }
 .organic .tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+
+/* — status banners — */
+.organic .banner { border-radius: var(--radius-md); padding: 10px 14px; font-size: 13px; }
+.organic .banner-success { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.organic .banner-warn { background: var(--color-accent-100); color: var(--color-accent-800); }
+.organic .banner-error { background: #fdeceb; color: #93201a; }
 
 /* — nav — */
 .organic .nav {

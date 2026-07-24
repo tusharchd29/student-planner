@@ -61,50 +61,54 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 flex items-end bg-black/30">
-      <div className="w-full rounded-t-2xl bg-white p-6">
-        <h2 className="mb-4 text-lg font-semibold">Account</h2>
+    <div className="organic sheet-backdrop">
+      <div className="sheet">
+        <h4 className="mb-[13.2px]">Account</h4>
 
         {done ? (
-          <p className="mb-4 text-sm text-emerald-700">
+          <p className="banner banner-success mb-[13.2px]">
             {done} Signing you out…
           </p>
         ) : (
           <>
-            <div className="mb-6">
-              <h3 className="mb-1 font-medium text-slate-800">
-                Export your data
-              </h3>
-              <p className="mb-2 text-sm text-slate-500">
+            <div className="mb-[26.4px]">
+              <h5 className="mb-[4px]">Export your data</h5>
+              <p className="text-muted mb-[8.8px] text-[13px]">
                 Download everything you've stored in the app as a JSON file.
               </p>
               <button
                 onClick={exportData}
                 disabled={exporting}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {exporting ? "Preparing…" : "Download my data"}
               </button>
             </div>
 
-            <div className="mb-2 border-t pt-4">
-              <h3 className="mb-1 font-medium text-red-700">
+            <div
+              className="mb-[8.8px] pt-[17.6px]"
+              style={{ borderTop: "1px solid var(--color-divider)" }}
+            >
+              <h5
+                className="mb-[4px]"
+                style={{ color: "var(--color-accent-900)" }}
+              >
                 Delete your account
-              </h3>
-              <p className="mb-2 text-sm text-slate-500">
+              </h5>
+              <p className="text-muted mb-[8.8px] text-[13px]">
                 Permanently deletes all your tasks, calendar sync data, and
-                settings. This can't be undone. Type DELETE to confirm.
+                settings. This can&apos;t be undone. Type DELETE to confirm.
               </p>
               <input
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder="DELETE"
-                className="mb-2 w-full rounded-lg border p-2"
+                className="input mb-[8.8px]"
               />
               <button
                 onClick={deleteAccount}
                 disabled={deleting || confirmText !== "DELETE"}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+                className="btn btn-danger-solid"
               >
                 {deleting ? "Deleting…" : "Permanently delete my account"}
               </button>
@@ -112,12 +116,12 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
           </>
         )}
 
-        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="banner banner-error mb-[13.2px]">{error}</p>}
 
         {!done && (
           <button
             onClick={onClose}
-            className="mt-4 w-full rounded-lg border py-2 text-slate-600"
+            className="btn btn-secondary mt-[13.2px] w-full"
           >
             Close
           </button>

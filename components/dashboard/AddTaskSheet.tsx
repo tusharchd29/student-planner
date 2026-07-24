@@ -109,6 +109,27 @@ async function insertOrUpdateTask(
   return supabase.from(table).insert(payload);
 }
 
+function SegOption({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-active={active}
+      className="seg-opt"
+    >
+      {children}
+    </button>
+  );
+}
+
 export function AddTaskSheet({
   onClose,
   onSaved,
@@ -219,40 +240,39 @@ export function AddTaskSheet({
   }
 
   return (
-    <div className="fixed inset-0 flex items-end bg-black/30">
-      <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-6">
+    <div className="organic sheet-backdrop">
+      <div className="sheet">
         {stage === "input" ? (
           <>
-            <h2 className="mb-4 text-lg font-semibold">Add task</h2>
+            <h4 className="mb-[13.2px]">Add task</h4>
             <textarea
               value={quickText}
               onChange={(e) => setQuickText(e.target.value)}
               placeholder='Try: "history essay due Friday, ~2 hours"'
               rows={3}
-              className="mb-2 w-full rounded-lg border p-2"
+              className="input mb-[8.8px]"
               autoFocus
             />
-            <p className="mb-4 text-xs text-slate-400">
+            <p className="text-muted mb-[13.2px] text-[12px]">
               Describe the task naturally, or skip straight to the form below.
             </p>
-            {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-            <div className="flex gap-2">
-              <button
-                onClick={onClose}
-                className="flex-1 rounded-lg border py-2 text-slate-600"
-              >
+            {error && (
+              <p className="banner banner-error mb-[13.2px]">{error}</p>
+            )}
+            <div className="flex gap-[8.8px]">
+              <button onClick={onClose} className="btn btn-secondary flex-1">
                 Cancel
               </button>
               <button
                 onClick={skipToManualEntry}
-                className="flex-1 rounded-lg border py-2 text-slate-600"
+                className="btn btn-secondary flex-1"
               >
                 Fill in manually
               </button>
               <button
                 onClick={parse}
                 disabled={parsing || !quickText.trim()}
-                className="flex-1 rounded-lg bg-indigo-600 py-2 text-white disabled:opacity-50"
+                className="btn btn-primary flex-1"
               >
                 {parsing ? "Parsing…" : "Parse"}
               </button>
@@ -260,63 +280,51 @@ export function AddTaskSheet({
           </>
         ) : (
           <>
-            <h2 className="mb-4 text-lg font-semibold">
+            <h4 className="mb-[13.2px]">
               {isEditing ? "Edit task" : "Review before saving"}
-            </h2>
+            </h4>
 
             {!isEditing && (
               <>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Type
-                </label>
-                <div className="mb-3 flex gap-2">
+                <label className="field-label">Type</label>
+                <div className="mb-[13.2px] flex gap-[8px]">
                   {(["fixed", "flex", "personal"] as const).map((k) => (
-                    <button
+                    <SegOption
                       key={k}
+                      active={draft.type === k}
                       onClick={() => setDraft((d) => ({ ...d, type: k }))}
-                      className={`rounded-full px-3 py-1 text-sm ${
-                        draft.type === k
-                          ? "bg-indigo-600 text-white"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
                     >
                       {k}
-                    </button>
+                    </SegOption>
                   ))}
                 </div>
               </>
             )}
 
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              Title
-            </label>
+            <label className="field-label">Title</label>
             <input
               value={draft.title}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, title: e.target.value }))
               }
-              className="mb-3 w-full rounded-lg border p-2"
+              className="input mb-[13.2px]"
             />
 
             {draft.type === "flex" && (
-              <div className="mb-3 flex gap-3">
+              <div className="mb-[13.2px] flex gap-[13.2px]">
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs font-medium text-slate-500">
-                    Due date
-                  </label>
+                  <label className="field-label">Due date</label>
                   <input
                     type="date"
                     value={draft.deadline}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, deadline: e.target.value }))
                     }
-                    className="w-full rounded-lg border p-2"
+                    className="input"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs font-medium text-slate-500">
-                    Duration (min)
-                  </label>
+                  <label className="field-label">Duration (min)</label>
                   <input
                     type="number"
                     min={5}
@@ -328,7 +336,7 @@ export function AddTaskSheet({
                         duration_minutes: Number(e.target.value),
                       }))
                     }
-                    className="w-full rounded-lg border p-2"
+                    className="input"
                   />
                 </div>
               </div>
@@ -336,11 +344,9 @@ export function AddTaskSheet({
 
             {draft.type === "fixed" && (
               <>
-                <div className="mb-3 flex gap-3">
+                <div className="mb-[13.2px] flex gap-[13.2px]">
                   <div className="flex-1">
-                    <label className="mb-1 block text-xs font-medium text-slate-500">
-                      Start time
-                    </label>
+                    <label className="field-label">Start time</label>
                     <input
                       type="time"
                       value={minutesToTime(draft.start_minutes)}
@@ -350,13 +356,11 @@ export function AddTaskSheet({
                           start_minutes: timeToMinutes(e.target.value),
                         }))
                       }
-                      className="w-full rounded-lg border p-2"
+                      className="input"
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="mb-1 block text-xs font-medium text-slate-500">
-                      End time
-                    </label>
+                    <label className="field-label">End time</label>
                     <input
                       type="time"
                       value={minutesToTime(draft.end_minutes)}
@@ -366,71 +370,58 @@ export function AddTaskSheet({
                           end_minutes: timeToMinutes(e.target.value),
                         }))
                       }
-                      className="w-full rounded-lg border p-2"
+                      className="input"
                     />
                   </div>
                 </div>
 
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Repeats
-                </label>
-                <div className="mb-3 flex gap-2">
-                  <button
+                <label className="field-label">Repeats</label>
+                <div className="mb-[13.2px] flex gap-[8px]">
+                  <SegOption
+                    active={draft.recurrence === "weekly"}
                     onClick={() =>
                       setDraft((d) => ({ ...d, recurrence: "weekly" }))
                     }
-                    className={`rounded-full px-3 py-1 text-sm ${
-                      draft.recurrence === "weekly"
-                        ? "bg-indigo-600 text-white"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
                   >
                     Every week
-                  </button>
-                  <button
+                  </SegOption>
+                  <SegOption
+                    active={draft.recurrence === "once"}
                     onClick={() =>
                       setDraft((d) => ({ ...d, recurrence: "once" }))
                     }
-                    className={`rounded-full px-3 py-1 text-sm ${
-                      draft.recurrence === "once"
-                        ? "bg-indigo-600 text-white"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
                   >
                     Just once
-                  </button>
+                  </SegOption>
                 </div>
 
                 {draft.recurrence === "weekly" ? (
-                  <div className="mb-3 flex gap-1">
+                  <div className="mb-[13.2px] flex gap-[4px]">
                     {WEEKDAY_LABELS.map((label, i) => (
                       <button
                         key={label}
+                        type="button"
                         onClick={() =>
                           setDraft((d) => ({ ...d, day_of_week: i }))
                         }
-                        className={`flex-1 rounded-lg py-1 text-xs ${
-                          draft.day_of_week === i
-                            ? "bg-indigo-600 text-white"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
+                        data-active={draft.day_of_week === i}
+                        className="seg-opt flex-1 text-center"
+                        style={{ padding: "6px 0" }}
                       >
                         {label}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="mb-3">
-                    <label className="mb-1 block text-xs font-medium text-slate-500">
-                      Date
-                    </label>
+                  <div className="mb-[13.2px]">
+                    <label className="field-label">Date</label>
                     <input
                       type="date"
                       value={draft.event_date}
                       onChange={(e) =>
                         setDraft((d) => ({ ...d, event_date: e.target.value }))
                       }
-                      className="w-full rounded-lg border p-2"
+                      className="input"
                     />
                   </div>
                 )}
@@ -438,10 +429,8 @@ export function AddTaskSheet({
             )}
 
             {draft.type === "personal" && (
-              <div className="mb-3">
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Weekly quota (min)
-                </label>
+              <div className="mb-[13.2px]">
+                <label className="field-label">Weekly quota (min)</label>
                 <input
                   type="number"
                   min={5}
@@ -453,28 +442,28 @@ export function AddTaskSheet({
                       weekly_quota_minutes: Number(e.target.value),
                     }))
                   }
-                  className="w-full rounded-lg border p-2"
+                  className="input"
                 />
               </div>
             )}
 
             {error && (
-              <p className="mb-3 text-sm text-red-600">
+              <p className="banner banner-error mb-[13.2px]">
                 Couldn&apos;t save: {error}
               </p>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex gap-[8.8px]">
               <button
                 onClick={() => (isEditing ? onClose() : setStage("input"))}
-                className="flex-1 rounded-lg border py-2 text-slate-600"
+                className="btn btn-secondary flex-1"
               >
                 {isEditing ? "Cancel" : "Back"}
               </button>
               <button
                 onClick={save}
                 disabled={saving || !draft.title.trim()}
-                className="flex-1 rounded-lg bg-indigo-600 py-2 text-white disabled:opacity-50"
+                className="btn btn-primary flex-1"
               >
                 {saving ? "Saving…" : isEditing ? "Save changes" : "Add task"}
               </button>
